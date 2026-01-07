@@ -133,7 +133,7 @@ class ChatterboxTTS:
         if device in ["cpu", "mps"]:
             map_location = torch.device('cpu')
         else:
-            map_location = None
+            map_location = torch.device(device)
 
         ve = VoiceEncoder()
         ve.load_state_dict(

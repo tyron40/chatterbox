@@ -126,6 +126,8 @@ class Conditionals:
 
     @classmethod
     def load(cls, fpath, map_location="cpu"):
+        if isinstance(map_location, str):
+            map_location = torch.device(map_location)
         kwargs = torch.load(fpath, map_location=map_location, weights_only=True)
         return cls(T3Cond(**kwargs['t3']), kwargs['gen'])
 
@@ -161,9 +163,15 @@ class ChatterboxMultilingualTTS:
     def from_local(cls, ckpt_dir, device) -> 'ChatterboxMultilingualTTS':
         ckpt_dir = Path(ckpt_dir)
 
+        # Always load to CPU first for non-CUDA devices to handle CUDA-saved models
+        if device in ["cpu", "mps"]:
+            map_location = torch.device('cpu')
+        else:
+            map_location = torch.device(device)
+
         ve = VoiceEncoder()
         ve.load_state_dict(
-            torch.load(ckpt_dir / "ve.pt", weights_only=True)
+            torch.load(ckpt_dir / "ve.pt", weights_only=True, map_location=map_location)
         )
         ve.to(device).eval()
 
@@ -176,7 +184,7 @@ class ChatterboxMultilingualTTS:
 
         s3gen = S3Gen()
         s3gen.load_state_dict(
-            torch.load(ckpt_dir / "s3gen.pt", weights_only=True)
+            torch.load(ckpt_dir / "s3gen.pt", weights_only=True, map_location=map_location)
         )
         s3gen.to(device).eval()
 
@@ -186,7 +194,7 @@ class ChatterboxMultilingualTTS:
 
         conds = None
         if (builtin_voice := ckpt_dir / "conds.pt").exists():
-            conds = Conditionals.load(builtin_voice).to(device)
+            conds = Conditionals.load(builtin_voice, map_location=map_location).to(device)
 
         return cls(t3, s3gen, ve, tokenizer, device, conds=conds)
 
