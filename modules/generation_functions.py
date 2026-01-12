@@ -418,3 +418,101 @@ def generate_turbo_speech(text, voice_name):
         error_status = f"❌ Error generating speech: {str(e)}"
         yield 0, None, error_status
 
+
+def generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
+    """
+    Generate multiple speech outputs in batch using Turbo model.
+    
+    Args:
+        text_list: List of text strings to synthesize
+        voice_list: List of voice names (or single voice if use_same_voice is True)
+        use_same_voice: Boolean indicating if same voice should be used for all
+    
+    Yields:
+        Tuple of (overall_progress, audio_outputs_list, status_message)
+    """
+    try:
+        start_time = time.time()
+        
+        # Filter out empty texts
+        valid_items = [(i, text, voice_list[0] if use_same_voice else voice_list[i]) 
+                       for i, text in enumerate(text_list) 
+                       if text and text.strip()]
+        
+        if not valid_items:
+            yield 0, [], "❌ Error: No valid text inputs provided."
+            return
+        
+        total_items = len(valid_items)
+        yield 5, [], f"📦 Starting batch generation for {total_items} items..."
+        
+        # Load model once for all generations
+        yield 10, [], "Loading Turbo TTS model..."
+        model = model_manager.get_turbo_model()
+        if model is None:
+            yield 0, [], "❌ Error: Failed to load Turbo model."
+            return
+        
+        audio_outputs = []
+        
+        # Generate each item
+        for idx, (original_idx, text, voice_name) in enumerate(valid_items):
+            item_num = idx + 1
+            
+            # Resolve voice path
+            if not voice_name or voice_name == "None":
+                yield int(10 + (idx / total_items) * 85), audio_outputs, f"❌ Item {item_num}/{total_items}: No voice selected"
+                audio_outputs.append(None)
+                continue
+            
+            audio_prompt_path = resolve_voice_path(voice_name, "en")
+            if not audio_prompt_path:
+                yield int(10 + (idx / total_items) * 85), audio_outputs, f"❌ Item {item_num}/{total_items}: Voice not found"
+                audio_outputs.append(None)
+                continue
+            
+            yield int(10 + (idx / total_items) * 85), audio_outputs, f"🎙️ Generating item {item_num}/{total_items}: {text[:50]}..."
+            
+            try:
+                # Chunk text
+                text_chunks = smart_chunk_text(text)
+                generated_wavs = []
+                
+                # Generate audio for each chunk
+                for chunk in text_chunks:
+                    chunk_wav = model.generate(
+                        chunk,
+                        audio_prompt_path=audio_prompt_path
+                    )
+                    generated_wavs.append(chunk_wav)
+                
+                # Concatenate chunks
+                if len(generated_wavs) > 1:
+                    full_wav = torch.cat(generated_wavs, dim=-1)
+                else:
+                    full_wav = generated_wavs[0]
+                
+                audio_outputs.append((model.sr, full_wav.squeeze(0).numpy()))
+                
+            except Exception as e:
+                yield int(10 + (idx / total_items) * 85), audio_outputs, f"❌ Item {item_num}/{total_items}: Error - {str(e)}"
+                audio_outputs.append(None)
+                continue
+        
+        # Calculate total time
+        total_time = time.time() - start_time
+        successful = sum(1 for audio in audio_outputs if audio is not None)
+        
+        final_status = f"✅ Batch generation complete!\n"
+        final_status += f"Total items: {total_items}\n"
+        final_status += f"Successful: {successful}\n"
+        final_status += f"Failed: {total_items - successful}\n"
+        final_status += f"Total time: {format_time(total_time)}\n"
+        final_status += f"Average time per item: {format_time(total_time / total_items)}"
+        
+        yield 100, audio_outputs, final_status
+        
+    except Exception as e:
+        error_status = f"❌ Error in batch generation: {str(e)}"
+        yield 0, [], error_status
+                    

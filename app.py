@@ -28,7 +28,8 @@ from modules.generation_functions import (
     generate_speech,
     generate_multilingual_speech,
     convert_voice,
-    generate_turbo_speech
+    generate_turbo_speech,
+    generate_batch_turbo_speech
 )
 
 # Import UI components
@@ -38,7 +39,8 @@ from modules.ui_components import (
     create_multilingual_tab,
     create_voice_conversion_tab,
     create_clone_voice_tab,
-    create_turbo_tab
+    create_turbo_tab,
+    create_batch_tab
 )
 
 # Load voices at startup
@@ -89,6 +91,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     # Create tabs
     with gr.Tab("⚡ Turbo TTS"):
         turbo_components = create_turbo_tab()
+    
+    with gr.Tab("📦 Batch TTS"):
+        batch_components = create_batch_tab()
 
     with gr.Tab("🎤 TTS Main (English)"):
         tts_components = create_tts_tab()
@@ -395,6 +400,70 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     ).then(
         fn=lambda: "\n".join(load_voices()) if load_voices() else "No voices cloned yet",
         outputs=[clone_components['current_voices_display']]
+    )
+    
+    # ---------------------------
+    # Event Handlers - Batch Tab
+    # ---------------------------
+    # Toggle voice dropdowns visibility based on use_same_voice checkbox
+    def toggle_voice_dropdowns(use_same):
+        updates = []
+        for voice_input in batch_components['voice_inputs']:
+            updates.append(gr.update(visible=not use_same))
+        return updates
+    
+    batch_components['use_same_voice'].change(
+        fn=toggle_voice_dropdowns,
+        inputs=[batch_components['use_same_voice']],
+        outputs=batch_components['voice_inputs']
+    )
+    
+    # Batch generation handler
+    def batch_generate_wrapper(use_same_voice, global_voice, *text_and_voice_inputs):
+        """Wrapper to handle batch generation with proper input parsing."""
+        # Split inputs into texts and voices
+        num_fields = 50
+        text_list = list(text_and_voice_inputs[:num_fields])
+        voice_list = list(text_and_voice_inputs[num_fields:])
+        
+        # If using same voice, create a list with the global voice repeated
+        if use_same_voice:
+            voice_list = [global_voice] * num_fields
+        
+        # Generate batch
+        for progress, audio_list, status in generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
+            # Prepare outputs: progress, status, and audio outputs
+            outputs = [progress, status]
+            
+            # Add audio outputs (pad with None if needed)
+            for i in range(num_fields):
+                if i < len(audio_list):
+                    outputs.append(audio_list[i])
+                    # Make audio visible if it has content
+                    if audio_list[i] is not None:
+                        outputs.append(gr.update(visible=True))
+                    else:
+                        outputs.append(gr.update(visible=False))
+                else:
+                    outputs.append(None)
+                    outputs.append(gr.update(visible=False))
+            
+            yield outputs
+                    
+    # Wire up batch generation button
+    batch_inputs = [batch_components['use_same_voice'], batch_components['global_voice']] + \
+                   batch_components['text_inputs'] + batch_components['voice_inputs']
+    
+    batch_outputs = [batch_components['progress_bar'], batch_components['status_box']] + \
+                    [(audio, audio) for audio in batch_components['audio_outputs']]
+    batch_outputs_flat = [batch_components['progress_bar'], batch_components['status_box']]
+    for audio in batch_components['audio_outputs']:
+        batch_outputs_flat.extend([audio, audio])
+    
+    batch_components['generate_batch_btn'].click(
+        fn=batch_generate_wrapper,
+        inputs=batch_inputs,
+        outputs=batch_outputs_flat
     )
 
 
