@@ -1,0 +1,30 @@
+============================================================
+Starting Chatterbox TTS Debug - 2026-01-14 00:03:21.672693
+============================================================
+Python: 3.12.6 (tags/v3.12.6:a4a2d2b, Sep  6 2024, 20:11:23) [MSC v.1940 64 bit (AMD64)]
+Working Directory: C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo
+
+Step 1: Changing to app directory...
+✓ Changed to: C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo
+
+Step 2: Reading app.py...
+✓ Read 16339 characters
+
+Step 3: Executing app.py...
+------------------------------------------------------------
+
+============================================================
+ERROR OCCURRED!
+============================================================
+Error Type: ImportError
+Error Message: cannot import name 'create_batch_tab' from 'modules.ui_components' (C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo\modules\ui_components.py)
+
+Full Traceback:
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo\run_debug.py", line 45, in <module>
+    exec(app_code, {
+  File "<string>", line 38, in <module>
+ImportError: cannot import name 'create_batch_tab' from 'modules.ui_components' (C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo\modules\ui_components.py)
+
+============================================================

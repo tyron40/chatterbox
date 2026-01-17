@@ -1,0 +1,29 @@
+✓ Changed to: C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo
+
+Step 2: Reading app.py...
+✓ Read 13411 characters
+
+Step 3: Executing app.py...
+------------------------------------------------------------
+
+============================================================
+ERROR OCCURRED!
+============================================================
+Error Type: TypeError
+Error Message: Audio.__init__() got an unexpected keyword argument 'show_download_button'
+
+Full Traceback:
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo\run_debug.py", line 45, in <module>
+    exec(app_code, {
+  File "<string>", line 91, in <module>
+  File "C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo\modules\ui_components.py", line 369, in create_turbo_tab
+    audio_output_turbo = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\R\AppData\Roaming\Python\Python312\site-packages\gradio\component_meta.py", line 194, in wrapper
+    return fn(self, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+TypeError: Audio.__init__() got an unexpected keyword argument 'show_download_button'
+
+============================================================

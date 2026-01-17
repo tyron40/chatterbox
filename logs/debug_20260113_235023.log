@@ -1,0 +1,23 @@
+✓ Changed to: C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo
+
+Step 2: Reading app.py...
+✓ Read 13411 characters
+
+Step 3: Executing app.py...
+------------------------------------------------------------
+
+============================================================
+ERROR OCCURRED!
+============================================================
+Error Type: NameError
+Error Message: name '__file__' is not defined
+
+Full Traceback:
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\R\Downloads\Chatterbox TTS with Turbo\Chatterbox TTS with Turbo\run_debug.py", line 45, in <module>
+    exec(app_code, {'__name__': '__main__'})
+  File "<string>", line 9, in <module>
+NameError: name '__file__' is not defined. Did you mean: '__name__'?
+
+============================================================

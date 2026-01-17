@@ -13,7 +13,23 @@ def create_header():
         <h1 style="font-size: 2.5em; margin-bottom: 0.5rem; text-align: center;">⚡ Chatterbox Turbo TTS (Supports 23 Languages) </h1>
         <p style='text-align: center; font-size: 1.2em; color: #666;'>High-Quality Voice Cloning, Text-to-Speech & Voice Conversion</p>
         
-        
+        <!-- Channel Section -->
+        <div style="display: flex; justify-content: center; align-items: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); 
+                    margin: 1.5rem auto; max-width: 700px;">
+            <div style="display: flex; align-items: center; gap: 1.5rem; width: 100%;">
+                <img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAkACQAAD..." alt="Channel Logo" style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #ccc; object-fit: cover;">
+            <div style="text-align: left; flex-grow: 1; color: white;">
+                <h3 style="margin: 0; font-size: 1.5rem; font-weight: 600;">Chatterbox by The Oracle Guy</h3>
+                <p style="font-size: 1rem; margin-top: 0.5rem; opacity: 0.9;">Subscribe for more such future releases!</p>
+            </div>
+            <a href="https://www.youtube.com/@theoracleguy_AI?sub_confirmation=1" target="_blank"
+                style="background-color: #E74C3C; color: white; padding: 10px 20px; font-size: 1.1rem;
+                        text-decoration: none; border-radius: 4px; font-weight: 600; display: inline-flex;
+                        align-items: center; gap: 12px; box-shadow: 0 4px 8px rgba(255, 0, 0, 0.2);
+                        transition: background-color 0.3s, box-shadow 0.3s;">
+                Subscribe
+            </a>
         </div>
     </div>
     """)
@@ -60,7 +76,7 @@ def create_tts_tab():
         with gr.Column():
             progress_bar_tts = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_tts = gr.Textbox(label="Status", value="Ready to generate...", lines=3, interactive=False)
-            audio_output_tts = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+            audio_output_tts = gr.Audio(label="Generated Audio", autoplay=True)
 
     return {
         "text": text,
@@ -123,7 +139,7 @@ def create_multilingual_tab():
         with gr.Column():
             progress_bar_mtl = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_mtl = gr.Textbox(label="Status", value="Ready to generate...", lines=3, interactive=False)
-            audio_output_mtl = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+            audio_output_mtl = gr.Audio(label="Generated Audio", autoplay=True)
             
             gr.Markdown(f"""
             ### Supported Languages ({len(SUPPORTED_LANGUAGES)}):
@@ -175,7 +191,7 @@ def create_voice_conversion_tab():
         with gr.Column():
             progress_bar_vc = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_vc = gr.Textbox(label="Status", value="Ready to convert...", lines=3, interactive=False)
-            audio_output_vc = gr.Audio(label="Converted Audio", autoplay=True, show_download_button=True)
+            audio_output_vc = gr.Audio(label="Converted Audio", autoplay=True)
 
     return {
         "input_audio": input_audio_vc,
@@ -285,100 +301,6 @@ def create_clone_voice_tab():
     }
 
 
-def create_batch_tab():
-    """Create the UI for Batch TTS tab with up to 50 text inputs."""
-    
-    # Create text input fields and voice dropdowns
-    text_inputs = []
-    voice_inputs = []
-    audio_outputs = []
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.Markdown("""
-            ### 📦 Batch TTS - Generate Up to 50 Audio Files
-            
-            **Features:**
-            - Generate up to 50 different texts at once
-            - Use same voice for all or select individually
-            - Progress tracking for batch
-            - Powered by Turbo TTS for fast processing
-            
-            **How to use:**
-            1. Enter texts in the fields (leave empty to skip)
-            2. Choose voice mode below
-            3. Click "Generate All"
-            4. Download each audio individually
-            """)
-            
-            # Voice mode selection
-            use_same_voice = gr.Checkbox(
-                label="Use same voice for all texts",
-                value=True,
-                info="Uncheck to select voice for each text individually"
-            )
-            
-            # Get available voices and set a valid default
-            available_voices = get_voices_for_language("en")
-            default_voice = available_voices[0] if available_voices else None
-            
-            # Global voice selector
-            global_voice = gr.Dropdown(
-                label="Voice for All Texts",
-                choices=available_voices,
-                value=default_voice,
-                info="This voice will be used when 'Use same voice' is checked"
-            )
-            
-            # Generate button
-            generate_batch_btn = gr.Button("📦 Generate All Audio Files", variant="primary", size="lg")
-            
-            # Progress and status
-            progress_bar_batch = gr.Slider(label="Overall Progress", minimum=0, maximum=100, value=0, interactive=False)
-            status_box_batch = gr.Textbox(label="Status", value="Ready to generate batch...", lines=5, interactive=False)
-        
-        with gr.Column(scale=2):
-            gr.Markdown("### Text Inputs (Enter up to 50 texts)")
-            
-            # Create 50 text input fields with corresponding voice dropdowns and audio outputs
-            for i in range(50):
-                with gr.Row():
-                    text_input = gr.Textbox(
-                        label=f"Text {i+1}",
-                        placeholder=f"Enter text {i+1} to synthesize (leave empty to skip)...",
-                        lines=2,
-                        scale=2
-                    )
-                    voice_input = gr.Dropdown(
-                        label=f"Voice {i+1}",
-                        choices=available_voices,
-                        value=default_voice,
-                        visible=False,
-                        scale=1
-                    )
-                    text_inputs.append(text_input)
-                    voice_inputs.append(voice_input)
-                
-                # Audio output for this text
-                audio_output = gr.Audio(
-                    label=f"Audio {i+1}",
-                    visible=False,
-                    show_download_button=True
-                )
-                audio_outputs.append(audio_output)
-    
-    return {
-        "use_same_voice": use_same_voice,
-        "global_voice": global_voice,
-        "text_inputs": text_inputs,
-        "voice_inputs": voice_inputs,
-        "audio_outputs": audio_outputs,
-        "generate_batch_btn": generate_batch_btn,
-        "progress_bar": progress_bar_batch,
-        "status_box": status_box_batch
-    }
-        
-
 def create_turbo_tab():
     """Create the UI for Turbo TTS tab."""
     with gr.Row():
@@ -444,7 +366,7 @@ def create_turbo_tab():
         with gr.Column():
             progress_bar_turbo = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_turbo = gr.Textbox(label="Status", value="Ready to generate...", lines=3, interactive=False)
-            audio_output_turbo = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+            audio_output_turbo = gr.Audio(label="Generated Audio", autoplay=True)
             
             gr.Markdown("""
             ### 💡 Tips for Best Results:
@@ -474,3 +396,192 @@ def create_turbo_tab():
         "btn_laugh": btn_laugh
     }
 
+
+def create_batch_tab():
+    """Create the UI for Batch TTS tab with up to 50 text inputs."""
+    
+    # Create text input fields and voice dropdowns
+    text_inputs = []
+    voice_inputs = []
+    audio_outputs = []
+    bgmusic_inputs = []
+    
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("""
+            ### 📦 Batch TTS - Generate Up to 50 Audio Files
+            
+            **Features:**
+            - Generate up to 50 different texts at once
+            - Use same voice for all or select individually
+            - Optional background music for each audio
+            - Progress tracking for batch
+            - Download all as ZIP file
+            - Powered by Turbo TTS for fast processing
+            
+            **How to use:**
+            1. Enter texts in the fields (leave empty to skip)
+            2. Choose voice mode below
+            3. Optionally add background music files
+            4. Click "Generate All"
+            5. Download each audio individually or all as ZIP
+            """)
+            
+            # Voice mode selection
+            use_same_voice = gr.Checkbox(
+                label="Use same voice for all texts",
+                value=True,
+                info="Uncheck to select voice for each text individually"
+            )
+            
+            # Get available voices and set a valid default
+            available_voices = get_voices_for_language("en")
+            default_voice = available_voices[0] if available_voices else None
+            
+            # Global voice selector
+            global_voice = gr.Dropdown(
+                label="Voice for All Texts",
+                choices=available_voices,
+                value=default_voice,
+                info="This voice will be used when 'Use same voice' is checked"
+            )
+            
+            generate_batch_btn = gr.Button("🎬 Generate All Audio Files", variant="primary", size="lg")
+            
+            progress_bar = gr.Slider(label="Overall Progress", minimum=0, maximum=100, value=0, interactive=False)
+            status_box = gr.Textbox(label="Status", value="Ready to generate...", lines=2, interactive=False)
+            
+            download_all_btn = gr.Button("📦 Download All as ZIP", visible=False, size="lg")
+            download_all_file = gr.File(label="Download ZIP", visible=False)
+        
+        with gr.Column(scale=2):
+            gr.Markdown("### Text Inputs & Outputs")
+            
+            # Create 50 text input fields with corresponding voice dropdowns, bgmusic, and audio outputs
+            for i in range(50):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        text_input = gr.Textbox(
+                            label=f"Text {i+1}",
+                            placeholder=f"Enter text {i+1} to synthesize (leave empty to skip)...",
+                            lines=2
+                        )
+                        text_inputs.append(text_input)
+                    
+                    with gr.Column(scale=2):
+                        voice_input = gr.Dropdown(
+                            label=f"Voice {i+1}",
+                            choices=available_voices,
+                            value=default_voice,
+                            visible=False
+                        )
+                        voice_inputs.append(voice_input)
+                        
+                        bgmusic_input = gr.Audio(
+                            label=f"Background Music {i+1} (Optional)",
+                            type="filepath",
+                            visible=False
+                        )
+                        bgmusic_inputs.append(bgmusic_input)
+                
+                # Audio output for this text
+                audio_output = gr.Audio(
+                    label=f"Generated Audio {i+1}",
+                    visible=False
+                )
+                audio_outputs.append(audio_output)
+    
+    return {
+        "text_inputs": text_inputs,
+        "voice_inputs": voice_inputs,
+        "bgmusic_inputs": bgmusic_inputs,
+        "audio_outputs": audio_outputs,
+        "use_same_voice": use_same_voice,
+        "global_voice": global_voice,
+        "generate_batch_btn": generate_batch_btn,
+        "progress_bar": progress_bar,
+        "status_box": status_box,
+        "download_all_btn": download_all_btn,
+        "download_all_file": download_all_file
+    }
+
+
+def create_cinematic_mixer_tab():
+    """Create the UI for Cinematic Audio Mixer tab."""
+    
+    with gr.Row():
+        with gr.Column():
+            gr.Markdown("""
+            ### 🎬 Cinematic Audio Mixer
+            
+            **Features:**
+            - Mix your generated voice with cinematic background music
+            - Choose from different moods (Epic, Dramatic, Suspenseful, etc.)
+            - Automatic audio ducking (music lowers when voice speaks)
+            - Adjustable music volume
+            - Professional audio mixing
+            
+            **How to use:**
+            1. Upload or select a voice audio file
+            2. Choose a mood/genre for background music
+            3. Adjust music volume
+            4. Enable/disable audio ducking
+            5. Click "Mix Audio"
+            """)
+            
+            voice_file = gr.Audio(
+                label="Voice Audio File",
+                type="filepath"
+            )
+            
+            mood_select = gr.Dropdown(
+                label="Music Mood/Genre",
+                choices=["Epic", "Dramatic", "Suspenseful", "Emotional", "Action", "Ambient"],
+                value="Epic"
+            )
+            
+            volume_slider = gr.Slider(
+                label="Music Volume",
+                minimum=0.1,
+                maximum=1.0,
+                value=0.3,
+                step=0.05
+            )
+            
+            ducking_checkbox = gr.Checkbox(
+                label="Enable Audio Ducking",
+                value=True
+            )
+            
+            mix_btn = gr.Button("🎵 Mix Audio", variant="primary", size="lg")
+        
+        with gr.Column():
+            status_box = gr.Textbox(
+                label="Status",
+                value="Ready to mix audio...",
+                lines=3,
+                interactive=False
+            )
+            
+            output_audio = gr.Audio(
+                label="Mixed Audio Output",
+                type="filepath"
+            )
+            
+            gr.Markdown("""
+            ### 💡 Tips:
+            - Use lower music volume (0.2-0.4) for voice-heavy content
+            - Enable ducking for better voice clarity
+            - Epic/Dramatic moods work well for trailers and promos
+            - Ambient/Emotional moods suit storytelling and narration
+            """)
+    
+    return {
+        "voice_file": voice_file,
+        "mood_select": mood_select,
+        "volume_slider": volume_slider,
+        "ducking_checkbox": ducking_checkbox,
+        "mix_btn": mix_btn,
+        "output_audio": output_audio,
+        "status_box": status_box
+    }

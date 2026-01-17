@@ -29,8 +29,10 @@ from modules.generation_functions import (
     generate_multilingual_speech,
     convert_voice,
     generate_turbo_speech,
-    generate_batch_turbo_speech
+    generate_batch_turbo_speech,
+    create_batch_zip
 )
+from modules.audio_mixer import mix_audio_with_music
 
 # Import UI components
 from modules.ui_components import (
@@ -40,7 +42,8 @@ from modules.ui_components import (
     create_voice_conversion_tab,
     create_clone_voice_tab,
     create_turbo_tab,
-    create_batch_tab
+    create_batch_tab,
+    create_cinematic_mixer_tab
 )
 
 # Load voices at startup
@@ -107,6 +110,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     with gr.Tab("🧬 Clone Voice"):
         clone_components = create_clone_voice_tab()
     
+    with gr.Tab("🎬 Cinematic Mixer"):
+        mixer_components = create_cinematic_mixer_tab()
+    
     # ---------------------------
     # Event Handlers - TTS Tab
     # ---------------------------
@@ -169,7 +175,6 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     )
     
     # Tag insertion buttons (Turbo) - JavaScript for cursor position
-    # Using the same pattern as HuggingFace demo
     INSERT_TAG_JS = """
     (tag_val, current_text) => {
         const textarea = document.querySelector('#turbo_textbox textarea');
@@ -186,68 +191,14 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     """
     
     # Create tag button handlers
-    turbo_components['btn_clear_throat'].click(
-        fn=None,
-        inputs=[turbo_components['btn_clear_throat'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_sigh'].click(
-        fn=None,
-        inputs=[turbo_components['btn_sigh'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_shush'].click(
-        fn=None,
-        inputs=[turbo_components['btn_shush'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_cough'].click(
-        fn=None,
-        inputs=[turbo_components['btn_cough'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_groan'].click(
-        fn=None,
-        inputs=[turbo_components['btn_groan'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_sniff'].click(
-        fn=None,
-        inputs=[turbo_components['btn_sniff'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_gasp'].click(
-        fn=None,
-        inputs=[turbo_components['btn_gasp'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_chuckle'].click(
-        fn=None,
-        inputs=[turbo_components['btn_chuckle'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
-    
-    turbo_components['btn_laugh'].click(
-        fn=None,
-        inputs=[turbo_components['btn_laugh'], turbo_components['text']],
-        outputs=turbo_components['text'],
-        js=INSERT_TAG_JS
-    )
+    for btn_name in ['btn_clear_throat', 'btn_sigh', 'btn_shush', 'btn_cough', 'btn_groan', 
+                     'btn_sniff', 'btn_gasp', 'btn_chuckle', 'btn_laugh']:
+        turbo_components[btn_name].click(
+            fn=None,
+            inputs=[turbo_components[btn_name], turbo_components['text']],
+            outputs=turbo_components['text'],
+            js=INSERT_TAG_JS
+        )
     
     # ---------------------------
     # Event Handlers - Multilingual Tab
@@ -305,32 +256,21 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         if voice_name == "None": 
             return None
         
-        # Remove gender symbols if present
         clean_name = voice_name.replace(" ♂️", "").replace(" ♀️", "")
         
-        # Check if it's a default voice string like "Default (English)"
         if clean_name.startswith("Default ("):
-            # Extract language name
             lang_name = clean_name.split("(")[1].split(")")[0]
-            # Find code
             for code, name in SUPPORTED_LANGUAGES.items():
                 if name == lang_name:
                     return LANGUAGE_CONFIG.get(code, {}).get("audio")
         
-        # Try different possible names with gender suffixes
         from modules.voice_manager import VOICES
-        possible_names = [
-            clean_name,
-            f"{clean_name}_male",
-            f"{clean_name}_female"
-        ]
+        possible_names = [clean_name, f"{clean_name}_male", f"{clean_name}_female"]
         
-        # Check cloned voices
         for name in possible_names:
             if name in VOICES["samples"]:
                 return VOICES["samples"][name]
         
-        # Try finding it with language suffixes if not found directly
         for code in SUPPORTED_LANGUAGES:
             for name in possible_names:
                 full_name = f"{name}_{code}"
@@ -348,7 +288,6 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     # ---------------------------
     # Event Handlers - Clone Voice Tab
     # ---------------------------
-    # Update all voice dropdowns when cloning
     clone_components['clone_btn'].click(
         fn=clone_voice,
         inputs=[
@@ -365,6 +304,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         fn=lambda: gr.update(choices=get_voices_for_language("en")),
         outputs=[turbo_components['voice_select']]
     ).then(
+        fn=lambda: gr.update(choices=get_voices_for_language("en")),
+        outputs=[batch_components['global_voice']]
+    ).then(
         fn=lambda lang: gr.update(choices=get_voices_for_language(lang)),
         inputs=[mtl_components['language_select']],
         outputs=[mtl_components['voice_select']]
@@ -379,7 +321,6 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         outputs=[clone_components['voice_to_delete']]
     )
     
-    # Delete voice functionality in Clone Voice tab
     clone_components['delete_btn'].click(
         fn=delete_voice,
         inputs=[clone_components['voice_to_delete']],
@@ -390,6 +331,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     ).then(
         fn=lambda: gr.update(choices=get_voices_for_language("en")),
         outputs=[turbo_components['voice_select']]
+    ).then(
+        fn=lambda: gr.update(choices=get_voices_for_language("en")),
+        outputs=[batch_components['global_voice']]
     ).then(
         fn=lambda lang: gr.update(choices=get_voices_for_language(lang)),
         inputs=[mtl_components['language_select']],
@@ -405,7 +349,6 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     # ---------------------------
     # Event Handlers - Batch Tab
     # ---------------------------
-    # Toggle voice dropdowns visibility based on use_same_voice checkbox
     def toggle_voice_dropdowns(use_same):
         updates = []
         for voice_input in batch_components['voice_inputs']:
@@ -418,45 +361,49 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         outputs=batch_components['voice_inputs']
     )
     
-    # Batch generation handler
-    def batch_generate_wrapper(use_same_voice, global_voice, *text_and_voice_inputs):
-        """Wrapper to handle batch generation with proper input parsing."""
-        # Split inputs into texts and voices
+    # State to store generated audios
+    batch_audio_state = gr.State([None] * 50)
+    
+    # Batch generation handler with background music support
+    def batch_generate_wrapper(use_same_voice, global_voice, *all_inputs):
+        """Wrapper to handle batch generation with background music."""
         num_fields = 50
-        text_list = list(text_and_voice_inputs[:num_fields])
-        voice_list = list(text_and_voice_inputs[num_fields:])
+        text_list = list(all_inputs[:num_fields])
+        voice_list = list(all_inputs[num_fields:num_fields*2])
+        bgmusic_list = list(all_inputs[num_fields*2:num_fields*3])
         
-        # If using same voice, create a list with the global voice repeated
         if use_same_voice:
             voice_list = [global_voice] * num_fields
         
-        # Generate batch
-        for progress, audio_list, status in generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
-            # Prepare outputs: progress, status, and audio outputs
-            outputs = [progress, status]
+        for progress, audio_list, status in generate_batch_turbo_speech(text_list, voice_list, use_same_voice, bgmusic_list):
+            outputs = [progress, status, audio_list]
             
-            # Add audio outputs (pad with None if needed)
+            has_audio = any(audio is not None for audio in audio_list)
+            outputs.append(gr.update(visible=has_audio))
+            
             for i in range(num_fields):
-                if i < len(audio_list):
-                    outputs.append(audio_list[i])
-                    # Make audio visible if it has content
-                    if audio_list[i] is not None:
-                        outputs.append(gr.update(visible=True))
-                    else:
-                        outputs.append(gr.update(visible=False))
-                else:
-                    outputs.append(None)
-                    outputs.append(gr.update(visible=False))
+                outputs.append(audio_list[i])
+                outputs.append(gr.update(visible=audio_list[i] is not None))
             
             yield outputs
-                    
-    # Wire up batch generation button
-    batch_inputs = [batch_components['use_same_voice'], batch_components['global_voice']] + \
-                   batch_components['text_inputs'] + batch_components['voice_inputs']
     
-    batch_outputs = [batch_components['progress_bar'], batch_components['status_box']] + \
-                    [(audio, audio) for audio in batch_components['audio_outputs']]
-    batch_outputs_flat = [batch_components['progress_bar'], batch_components['status_box']]
+    def download_all_handler(audio_list):
+        """Create ZIP file with all generated audios."""
+        if not audio_list or all(audio is None for audio in audio_list):
+            return None
+        zip_path = create_batch_zip(audio_list)
+        return zip_path if zip_path else None
+    
+    batch_inputs = [batch_components['use_same_voice'], batch_components['global_voice']] + \
+                   batch_components['text_inputs'] + batch_components['voice_inputs'] + \
+                   batch_components['bgmusic_inputs']
+    
+    batch_outputs_flat = [
+        batch_components['progress_bar'], 
+        batch_components['status_box'],
+        batch_audio_state,
+        batch_components['download_all_btn']
+    ]
     for audio in batch_components['audio_outputs']:
         batch_outputs_flat.extend([audio, audio])
     
@@ -464,6 +411,55 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         fn=batch_generate_wrapper,
         inputs=batch_inputs,
         outputs=batch_outputs_flat
+    )
+    
+    batch_components['download_all_btn'].click(
+        fn=download_all_handler,
+        inputs=[batch_audio_state],
+        outputs=[batch_components['download_all_file']]
+    ).then(
+        fn=lambda: gr.update(visible=True),
+        outputs=[batch_components['download_all_file']]
+    )
+    
+    # ---------------------------
+    # Event Handlers - Cinematic Mixer Tab
+    # ---------------------------
+    def mix_audio_handler(voice_file, mood, music_volume, enable_ducking):
+        """Handle audio mixing with progress updates."""
+        if voice_file is None:
+            return None, "❌ Please upload a voice file first"
+        
+        try:
+            yield None, "🎵 Mixing audio with cinematic music..."
+            
+            output_path = mix_audio_with_music(
+                voice_path=voice_file,
+                mood=mood,
+                music_volume=music_volume,
+                enable_ducking=enable_ducking
+            )
+            
+            if output_path:
+                yield output_path, f"✅ Success! Mixed audio saved to: {output_path}"
+            else:
+                yield None, "❌ Failed to mix audio. Check that FFmpeg is installed and music files are available."
+                
+        except Exception as e:
+            yield None, f"❌ Error: {str(e)}"
+    
+    mixer_components['mix_btn'].click(
+        fn=mix_audio_handler,
+        inputs=[
+            mixer_components['voice_file'],
+            mixer_components['mood_select'],
+            mixer_components['volume_slider'],
+            mixer_components['ducking_checkbox']
+        ],
+        outputs=[
+            mixer_components['output_audio'],
+            mixer_components['status_box']
+        ]
     )
 
 

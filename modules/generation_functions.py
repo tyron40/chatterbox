@@ -114,6 +114,7 @@ def smart_chunk_text(text, max_words=40):
 def generate_speech(text, voice_name, exaggeration, temperature, seed_num, cfgw, min_p, top_p, repetition_penalty):
     """Generate speech with progress tracking and validation."""
     try:
+        import traceback
         start_time = time.time()
         
         # Input validations
@@ -191,7 +192,10 @@ def generate_speech(text, voice_name, exaggeration, temperature, seed_num, cfgw,
         yield 100, (model.sr, full_wav.squeeze(0).numpy()), final_status
         
     except Exception as e:
-        error_status = f"❌ Error generating speech: {str(e)}"
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_status = f"❌ Error generating speech: {str(e)}\n\nFull traceback:\n{error_traceback}"
+        print(f"\n{'='*50}\nERROR IN generate_speech:\n{error_traceback}\n{'='*50}\n")
         yield 0, None, error_status
 
 
@@ -349,6 +353,7 @@ def convert_voice(input_audio, target_voice_name):
 def generate_turbo_speech(text, voice_name):
     """Generate speech using Turbo model with progress tracking and paralinguistic tag support."""
     try:
+        import traceback
         start_time = time.time()
         
         # Input validations
@@ -415,45 +420,59 @@ def generate_turbo_speech(text, voice_name):
         yield 100, (model.sr, full_wav.squeeze(0).numpy()), final_status
         
     except Exception as e:
-        error_status = f"❌ Error generating speech: {str(e)}"
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_status = f"❌ Error generating speech: {str(e)}\n\nFull traceback:\n{error_traceback}"
+        print(f"\n{'='*50}\nERROR IN generate_turbo_speech:\n{error_traceback}\n{'='*50}\n")
         yield 0, None, error_status
 
 
-def generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
+def generate_batch_turbo_speech(text_list, voice_list, use_same_voice, bgmusic_list=None):
     """
-    Generate multiple speech outputs in batch using Turbo model.
+    Generate multiple speech outputs in batch using Turbo model with optional background music.
     
     Args:
-        text_list: List of text strings to synthesize
+        text_list: List of text strings to synthesize (50 items)
         voice_list: List of voice names (or single voice if use_same_voice is True)
         use_same_voice: Boolean indicating if same voice should be used for all
+        bgmusic_list: Optional list of background music file paths (50 items)
     
     Yields:
         Tuple of (overall_progress, audio_outputs_list, status_message)
+        audio_outputs_list is always 50 items (None for empty/failed)
     """
     try:
+        import os
+        import tempfile
+        import soundfile as sf
+        from .audio_mixer import mix_audio_with_music
+        
         start_time = time.time()
         
-        # Filter out empty texts
+        # Initialize output list with 50 None values
+        audio_outputs = [None] * 50
+        
+        # Filter out empty texts but keep track of original indices
         valid_items = [(i, text, voice_list[0] if use_same_voice else voice_list[i]) 
                        for i, text in enumerate(text_list) 
                        if text and text.strip()]
         
         if not valid_items:
-            yield 0, [], "❌ Error: No valid text inputs provided."
+            yield 0, audio_outputs, "❌ Error: No valid text inputs provided."
             return
         
         total_items = len(valid_items)
-        yield 5, [], f"📦 Starting batch generation for {total_items} items..."
+        yield 5, audio_outputs, f"📦 Starting batch generation for {total_items} items..."
         
         # Load model once for all generations
-        yield 10, [], "Loading Turbo TTS model..."
+        yield 10, audio_outputs, "Loading Turbo TTS model..."
         model = model_manager.get_turbo_model()
         if model is None:
-            yield 0, [], "❌ Error: Failed to load Turbo model."
+            yield 0, audio_outputs, "❌ Error: Failed to load Turbo model."
             return
         
-        audio_outputs = []
+        successful_count = 0
+        failed_count = 0
         
         # Generate each item
         for idx, (original_idx, text, voice_name) in enumerate(valid_items):
@@ -462,13 +481,13 @@ def generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
             # Resolve voice path
             if not voice_name or voice_name == "None":
                 yield int(10 + (idx / total_items) * 85), audio_outputs, f"❌ Item {item_num}/{total_items}: No voice selected"
-                audio_outputs.append(None)
+                failed_count += 1
                 continue
             
             audio_prompt_path = resolve_voice_path(voice_name, "en")
             if not audio_prompt_path:
                 yield int(10 + (idx / total_items) * 85), audio_outputs, f"❌ Item {item_num}/{total_items}: Voice not found"
-                audio_outputs.append(None)
+                failed_count += 1
                 continue
             
             yield int(10 + (idx / total_items) * 85), audio_outputs, f"🎙️ Generating item {item_num}/{total_items}: {text[:50]}..."
@@ -492,21 +511,61 @@ def generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
                 else:
                     full_wav = generated_wavs[0]
                 
-                audio_outputs.append((model.sr, full_wav.squeeze(0).numpy()))
+                # Check if background music should be added
+                if bgmusic_list and bgmusic_list[original_idx]:
+                    bgmusic_path = bgmusic_list[original_idx]
+                    if bgmusic_path and os.path.exists(bgmusic_path):
+                        yield int(10 + (idx / total_items) * 85), audio_outputs, f"🎵 Adding background music to item {item_num}/{total_items}..."
+                        
+                        # Save voice audio to temp file
+                        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_voice:
+                            temp_voice_path = temp_voice.name
+                            sf.write(temp_voice_path, full_wav.squeeze(0).numpy(), model.sr)
+                        
+                        try:
+                            # Mix with background music
+                            mixed_path = mix_audio_with_music(
+                                voice_path=temp_voice_path,
+                                music_path=bgmusic_path,
+                                output_path=None,
+                                music_volume=0.15,
+                                enable_ducking=True
+                            )
+                            
+                            if mixed_path and os.path.exists(mixed_path):
+                                # Load mixed audio
+                                mixed_audio, mixed_sr = sf.read(mixed_path)
+                                audio_outputs[original_idx] = (mixed_sr, mixed_audio)
+                                # Clean up temp files
+                                os.remove(mixed_path)
+                            else:
+                                # If mixing failed, use original voice
+                                audio_outputs[original_idx] = (model.sr, full_wav.squeeze(0).numpy())
+                        finally:
+                            # Clean up temp voice file
+                            if os.path.exists(temp_voice_path):
+                                os.remove(temp_voice_path)
+                    else:
+                        # No valid background music, use voice only
+                        audio_outputs[original_idx] = (model.sr, full_wav.squeeze(0).numpy())
+                else:
+                    # No background music, use voice only
+                    audio_outputs[original_idx] = (model.sr, full_wav.squeeze(0).numpy())
+                
+                successful_count += 1
                 
             except Exception as e:
                 yield int(10 + (idx / total_items) * 85), audio_outputs, f"❌ Item {item_num}/{total_items}: Error - {str(e)}"
-                audio_outputs.append(None)
+                failed_count += 1
                 continue
         
         # Calculate total time
         total_time = time.time() - start_time
-        successful = sum(1 for audio in audio_outputs if audio is not None)
         
         final_status = f"✅ Batch generation complete!\n"
         final_status += f"Total items: {total_items}\n"
-        final_status += f"Successful: {successful}\n"
-        final_status += f"Failed: {total_items - successful}\n"
+        final_status += f"Successful: {successful_count}\n"
+        final_status += f"Failed: {failed_count}\n"
         final_status += f"Total time: {format_time(total_time)}\n"
         final_status += f"Average time per item: {format_time(total_time / total_items)}"
         
@@ -514,5 +573,58 @@ def generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
         
     except Exception as e:
         error_status = f"❌ Error in batch generation: {str(e)}"
-        yield 0, [], error_status
-                    
+        yield 0, [None] * 50, error_status
+
+
+def create_batch_zip(audio_outputs):
+    """
+    Create a ZIP file containing all generated audio files.
+    
+    Args:
+        audio_outputs: List of audio tuples (sample_rate, audio_data) or None
+    
+    Returns:
+        Path to the created ZIP file or None if failed
+    """
+    try:
+        import os
+        import tempfile
+        import zipfile
+        import soundfile as sf
+        from datetime import datetime
+        
+        # Filter out None values
+        valid_audios = [(i, audio) for i, audio in enumerate(audio_outputs) if audio is not None]
+        
+        if not valid_audios:
+            return None
+        
+        # Create output directory if it doesn't exist
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Create ZIP file with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_filename = f"batch_tts_{timestamp}.zip"
+        zip_path = os.path.join(output_dir, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for idx, (sr, audio_data) in valid_audios:
+                # Create temp WAV file
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                    temp_path = temp_file.name
+                    sf.write(temp_path, audio_data, sr)
+                
+                # Add to ZIP with proper name
+                audio_filename = f"audio_{idx+1:02d}.wav"
+                zipf.write(temp_path, audio_filename)
+                
+                # Clean up temp file
+                os.remove(temp_path)
+        
+        return zip_path
+        
+    except Exception as e:
+        print(f"Error creating ZIP file: {e}")
+        return None
+                                

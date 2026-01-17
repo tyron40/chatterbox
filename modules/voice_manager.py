@@ -7,6 +7,12 @@ import tempfile
 import urllib.request
 import gradio as gr
 from .config import VOICE_DIR, LANGUAGE_CONFIG, SUPPORTED_LANGUAGES
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+    print("⚠️ Warning: pydub not available. Audio format conversion will be limited.")
 
 # Voice storage
 VOICES = {"samples": {}}
@@ -93,8 +99,11 @@ def resolve_voice_path(voice_name, language_code):
             return temp_file
         return audio_url
     
-    # Remove gender symbol from display name if present
-    clean_name = voice_name.replace(" ♂️", "").replace(" ♀️", "")
+    # Remove gender symbols and other special characters from display name
+    clean_name = voice_name.replace(" ♂️", "").replace(" ♀️", "").replace(" ☑️", "").replace("☑️", "").strip()
+    
+    print(f"🔍 Resolving voice: '{voice_name}' -> clean: '{clean_name}' for language: {language_code}")
+    print(f"📁 Available voices: {list(VOICES['samples'].keys())}")
     
     # Try to find the voice with different gender suffix combinations
     possible_names = [
@@ -107,16 +116,21 @@ def resolve_voice_path(voice_name, language_code):
         # English voices don't have language suffix
         for name in possible_names:
             if name in VOICES["samples"]:
-                return VOICES["samples"][name]
+                resolved_path = VOICES["samples"][name]
+                print(f"✅ Found voice: {name} -> {resolved_path}")
+                return resolved_path
     else:
         # Other languages have language suffix
         for name in possible_names:
             full_name = f"{name}_{language_code}"
             if full_name in VOICES["samples"]:
-                return VOICES["samples"][full_name]
+                resolved_path = VOICES["samples"][full_name]
+                print(f"✅ Found voice: {full_name} -> {resolved_path}")
+                return resolved_path
     
+    print(f"❌ Voice not found! Tried: {possible_names}")
     return None
-
+                
 
 def get_all_voices_with_gender():
     """Get all voices formatted with gender symbols for display."""
@@ -127,7 +141,7 @@ def get_all_voices_with_gender():
 
 
 def clone_voice(audio_file, new_voice_name, voice_language, voice_gender):
-    """Clone a voice by saving the reference audio."""
+    """Clone a voice by saving the reference audio with automatic format conversion."""
     try:
         # Input validations
         if not new_voice_name or not new_voice_name.strip():
@@ -149,9 +163,43 @@ def clone_voice(audio_file, new_voice_name, voice_language, voice_gender):
         if new_voice_name in VOICES["samples"]:
             return f"❌ Error: Voice '{new_voice_name}' already exists. Please choose a different name.", gr.update()
         
-        # Save the audio file
+        # Determine output path
         wav_path = os.path.join(VOICE_DIR, f"{new_voice_name}.wav")
-        shutil.copy(audio_file, wav_path)
+        
+        # Check if input file is already WAV
+        file_ext = os.path.splitext(audio_file)[1].lower()
+        
+        # Always convert/re-encode audio to ensure proper format
+        if PYDUB_AVAILABLE:
+            try:
+                print(f"Processing audio file ({file_ext})...")
+                audio = AudioSegment.from_file(audio_file)
+                
+                # Convert to mono if stereo
+                if audio.channels > 1:
+                    print(f"Converting from {audio.channels} channels to mono...")
+                    audio = audio.set_channels(1)
+                
+                # Resample to 24kHz if needed
+                if audio.frame_rate != 24000:
+                    print(f"Resampling from {audio.frame_rate}Hz to 24000Hz...")
+                    audio = audio.set_frame_rate(24000)
+                
+                # Export as WAV with proper settings
+                audio.export(
+                    wav_path,
+                    format='wav',
+                    parameters=["-acodec", "pcm_s16le"]  # 16-bit PCM WAV
+                )
+                print(f"✅ Audio processed and saved successfully")
+            except Exception as conv_error:
+                print(f"⚠️ pydub conversion failed: {conv_error}")
+                print(f"⚠️ Attempting direct copy as fallback...")
+                shutil.copy(audio_file, wav_path)
+        else:
+            # If pydub not available, try direct copy
+            print(f"⚠️ pydub not available, attempting direct copy...")
+            shutil.copy(audio_file, wav_path)
         
         # Update voices dictionary
         VOICES["samples"][new_voice_name] = wav_path
@@ -164,6 +212,141 @@ def clone_voice(audio_file, new_voice_name, voice_language, voice_gender):
         
     except Exception as e:
         return f"❌ Error cloning voice: {str(e)}", gr.update()
+                
+
+def check_voice_format(voice_name):
+    """Check if a voice file needs format conversion."""
+    try:
+        if not voice_name or voice_name == "None":
+            return "❌ Error: No voice selected."
+        
+        # Remove gender symbols if present
+        clean_name = voice_name.replace(" ♂️", "").replace(" ♀️", "")
+        
+        # Try to find the actual voice name in VOICES
+        actual_name = None
+        possible_names = [
+            clean_name,
+            f"{clean_name}_male",
+            f"{clean_name}_female"
+        ]
+        
+        for name in possible_names:
+            if name in VOICES["samples"]:
+                actual_name = name
+                break
+        
+        if not actual_name:
+            return f"❌ Error: Voice '{voice_name}' not found."
+        
+        wav_path = VOICES["samples"][actual_name]
+        
+        if not os.path.exists(wav_path):
+            return f"❌ Error: Voice file not found at {wav_path}"
+        
+        # Try to load with pydub to check format
+        if PYDUB_AVAILABLE:
+            try:
+                audio = AudioSegment.from_file(wav_path)
+                
+                issues = []
+                if audio.channels > 1:
+                    issues.append(f"Stereo ({audio.channels} channels)")
+                if audio.frame_rate != 24000:
+                    issues.append(f"Sample rate: {audio.frame_rate}Hz")
+                
+                if issues:
+                    return f"⚠️ Voice '{voice_name}' needs conversion:\n- " + "\n- ".join(issues) + "\n\nClick 'Convert Voice' to fix."
+                else:
+                    return f"✅ Voice '{voice_name}' is in correct format:\n- Mono (1 channel)\n- 24000Hz sample rate"
+            except Exception as e:
+                return f"⚠️ Voice '{voice_name}' may have format issues:\n{str(e)}\n\nClick 'Convert Voice' to fix."
+        else:
+            return "⚠️ pydub not available. Cannot check voice format."
+            
+    except Exception as e:
+        return f"❌ Error checking voice: {str(e)}"
+
+
+def convert_existing_voice(voice_name):
+    """Convert an existing voice to proper format."""
+    try:
+        if not voice_name or voice_name == "None":
+            return "❌ Error: No voice selected.", gr.update()
+        
+        # Remove gender symbols if present
+        clean_name = voice_name.replace(" ♂️", "").replace(" ♀️", "")
+        
+        # Try to find the actual voice name in VOICES
+        actual_name = None
+        possible_names = [
+            clean_name,
+            f"{clean_name}_male",
+            f"{clean_name}_female"
+        ]
+        
+        for name in possible_names:
+            if name in VOICES["samples"]:
+                actual_name = name
+                break
+        
+        if not actual_name:
+            return f"❌ Error: Voice '{voice_name}' not found.", gr.update()
+        
+        wav_path = VOICES["samples"][actual_name]
+        
+        if not os.path.exists(wav_path):
+            return f"❌ Error: Voice file not found at {wav_path}", gr.update()
+        
+        if not PYDUB_AVAILABLE:
+            return "❌ Error: pydub not available. Cannot convert voice.", gr.update()
+        
+        # Create backup
+        backup_path = wav_path + ".backup"
+        shutil.copy(wav_path, backup_path)
+        print(f"📦 Created backup: {backup_path}")
+        
+        try:
+            print(f"🔄 Converting voice: {voice_name}")
+            audio = AudioSegment.from_file(wav_path)
+            
+            # Convert to mono if stereo
+            if audio.channels > 1:
+                print(f"Converting from {audio.channels} channels to mono...")
+                audio = audio.set_channels(1)
+            
+            # Resample to 24kHz if needed
+            if audio.frame_rate != 24000:
+                print(f"Resampling from {audio.frame_rate}Hz to 24000Hz...")
+                audio = audio.set_frame_rate(24000)
+            
+            # Export as WAV with proper settings
+            audio.export(
+                wav_path,
+                format='wav',
+                parameters=["-acodec", "pcm_s16le"]  # 16-bit PCM WAV
+            )
+            
+            print(f"✅ Voice converted successfully")
+            
+            # Remove backup if successful
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+                print(f"🗑️ Removed backup")
+            
+            return f"✅ Voice '{voice_name}' converted successfully!\n- Format: 16-bit PCM WAV\n- Channels: Mono\n- Sample rate: 24000Hz", gr.update()
+            
+        except Exception as conv_error:
+            # Restore from backup if conversion failed
+            if os.path.exists(backup_path):
+                shutil.copy(backup_path, wav_path)
+                os.remove(backup_path)
+                print(f"⚠️ Conversion failed, restored from backup")
+            
+            return f"❌ Error converting voice: {str(conv_error)}", gr.update()
+            
+    except Exception as e:
+        return f"❌ Error: {str(e)}", gr.update()
 
 
 def delete_voice(voice_name):
