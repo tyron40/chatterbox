@@ -33,6 +33,10 @@ from modules.generation_functions import (
     create_batch_zip
 )
 from modules.audio_mixer import mix_audio_with_music
+from modules.ai_video_generator import (
+    generate_text_with_openai,
+    create_motivational_video
+)
 
 # Import UI components
 from modules.ui_components import (
@@ -354,19 +358,46 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         for voice_input in batch_components['voice_inputs']:
             updates.append(gr.update(visible=not use_same))
         return updates
-    
+            
     batch_components['use_same_voice'].change(
         fn=toggle_voice_dropdowns,
         inputs=[batch_components['use_same_voice']],
         outputs=batch_components['voice_inputs']
     )
     
-    # State to store generated audios
-    batch_audio_state = gr.State([None] * 50)
+    # AI Text Generation handlers for each field
+    def generate_ai_text(api_key, prompt_template, field_index):
+        """Generate text using OpenAI API for a specific field."""
+        if not api_key:
+            return "❌ Please enter your OpenAI API key first"
+        
+        # Add variation to the prompt for each field
+        prompt = f"{prompt_template} (Variation {field_index + 1})"
+        success, result = generate_text_with_openai(api_key, prompt)
+        
+        if success:
+            return result
+        else:
+            return f"❌ Error: {result}"
     
-    # Batch generation handler with background music support
-    def batch_generate_wrapper(use_same_voice, global_voice, *all_inputs):
-        """Wrapper to handle batch generation with background music."""
+    # Wire up AI generation buttons for each text field
+    for i, ai_btn in enumerate(batch_components['ai_generate_btns']):
+        ai_btn.click(
+            fn=lambda api_key, prompt, idx=i: generate_ai_text(api_key, prompt, idx),
+            inputs=[
+                batch_components['openai_api_key'],
+                batch_components['ai_prompt_template']
+            ],
+            outputs=[batch_components['text_inputs'][i]]
+        )
+    # State to store generated audios and videos
+    batch_audio_state = gr.State([None] * 50)
+    batch_video_state = gr.State([None] * 50)
+    
+    # Batch generation handler with background music and video creation support
+    def batch_generate_wrapper(use_same_voice, global_voice, openai_key, pixabay_key, 
+                               prompt_template, create_videos, video_query, video_duration, *all_inputs):
+        """Wrapper to handle batch generation with background music and video creation."""
         num_fields = 50
         text_list = list(all_inputs[:num_fields])
         voice_list = list(all_inputs[num_fields:num_fields*2])
@@ -375,8 +406,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         if use_same_voice:
             voice_list = [global_voice] * num_fields
         
+        # Generate audio files
         for progress, audio_list, status in generate_batch_turbo_speech(text_list, voice_list, use_same_voice, bgmusic_list):
-            outputs = [progress, status, audio_list]
+            outputs = [progress, status, audio_list, [None] * num_fields]
             
             has_audio = any(audio is not None for audio in audio_list)
             outputs.append(gr.update(visible=has_audio))
@@ -384,9 +416,60 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
             for i in range(num_fields):
                 outputs.append(audio_list[i])
                 outputs.append(gr.update(visible=audio_list[i] is not None))
+                outputs.append(None)  # Video placeholder
+                outputs.append(gr.update(visible=False))  # Video visibility
             
             yield outputs
-    
+        
+        # Create videos if enabled
+        if create_videos and pixabay_key:
+            video_list = [None] * num_fields
+            
+            for i, (text, audio_path) in enumerate(zip(text_list, audio_list)):
+                if text and audio_path:
+                    try:
+                        status_msg = f"Creating video {i+1}/{len([t for t in text_list if t])}..."
+                        outputs = [progress, status_msg, audio_list, video_list]
+                        outputs.append(gr.update(visible=True))
+                        
+                        for j in range(num_fields):
+                            outputs.append(audio_list[j])
+                            outputs.append(gr.update(visible=audio_list[j] is not None))
+                            outputs.append(video_list[j])
+                            outputs.append(gr.update(visible=video_list[j] is not None))
+                        
+                        yield outputs
+                        
+                        # Create video
+                        success, video_path, msg = create_motivational_video(
+                            text=text,
+                            audio_path=audio_path,
+                            pixabay_api_key=pixabay_key,
+                            search_query=video_query,
+                            target_duration=video_duration
+                        )
+                        
+                        if success:
+                            video_list[i] = video_path
+                    except Exception as e:
+                        print(f"Error creating video {i+1}: {str(e)}")
+            
+            # Final output with all videos
+            final_status = f"✅ Generated {len([a for a in audio_list if a])} audio files"
+            if any(video_list):
+                final_status += f" and {len([v for v in video_list if v])} videos!"
+            
+            outputs = [100, final_status, audio_list, video_list]
+            outputs.append(gr.update(visible=True))
+            
+            for i in range(num_fields):
+                outputs.append(audio_list[i])
+                outputs.append(gr.update(visible=audio_list[i] is not None))
+                outputs.append(video_list[i])
+                outputs.append(gr.update(visible=video_list[i] is not None))
+            
+            yield outputs
+                            
     def download_all_handler(audio_list):
         """Create ZIP file with all generated audios."""
         if not audio_list or all(audio is None for audio in audio_list):
@@ -394,19 +477,33 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         zip_path = create_batch_zip(audio_list)
         return zip_path if zip_path else None
     
-    batch_inputs = [batch_components['use_same_voice'], batch_components['global_voice']] + \
-                   batch_components['text_inputs'] + batch_components['voice_inputs'] + \
-                   batch_components['bgmusic_inputs']
+    batch_inputs = [
+        batch_components['use_same_voice'], 
+        batch_components['global_voice'],
+        batch_components['openai_api_key'],
+        batch_components['pixabay_api_key'],
+        batch_components['ai_prompt_template'],
+        batch_components['create_videos'],
+        batch_components['video_search_query'],
+        batch_components['video_duration']
+    ] + batch_components['text_inputs'] + batch_components['voice_inputs'] + \
+        batch_components['bgmusic_inputs']
     
     batch_outputs_flat = [
         batch_components['progress_bar'], 
         batch_components['status_box'],
         batch_audio_state,
+        batch_video_state,
         batch_components['download_all_btn']
     ]
-    for audio in batch_components['audio_outputs']:
-        batch_outputs_flat.extend([audio, audio])
-    
+    for i in range(50):
+        batch_outputs_flat.extend([
+            batch_components['audio_outputs'][i], 
+            batch_components['audio_outputs'][i],
+            batch_components['video_outputs'][i],
+            batch_components['video_outputs'][i]
+        ])
+        
     batch_components['generate_batch_btn'].click(
         fn=batch_generate_wrapper,
         inputs=batch_inputs,
