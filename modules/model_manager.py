@@ -1,13 +1,20 @@
 """
 Model management for Chatterbox TTS Enhanced
 """
+import sys
+import os
 import torch
 from .config import DEVICE
+
+# Add src directory to path
+src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 from chatterbox.tts import ChatterboxTTS
 from chatterbox.vc import ChatterboxVC
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 from chatterbox.tts_turbo import ChatterboxTurboTTS
-
 
 class ModelManager:
     """Manages loading and unloading of TTS, Multilingual, and VC models."""

@@ -42,8 +42,32 @@ else:
 print("=" * 50)
 print()
 
-# Supported languages from chatterbox.mtl_tts
-from chatterbox.mtl_tts import SUPPORTED_LANGUAGES
+# Supported languages
+SUPPORTED_LANGUAGES = {
+    "ar": "Arabic",
+    "da": "Danish",
+    "de": "German",
+    "el": "Greek",
+    "en": "English",
+    "es": "Spanish",
+    "fi": "Finnish",
+    "fr": "French",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ms": "Malay",
+    "nl": "Dutch",
+    "no": "Norwegian",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "sv": "Swedish",
+    "sw": "Swahili",
+    "tr": "Turkish",
+    "zh": "Chinese"
+}
 
 # Language configuration with sample audio and text
 LANGUAGE_CONFIG = {
