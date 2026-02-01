@@ -7,6 +7,7 @@ import librosa
 import torch
 import perth
 import pyloudnorm as ln
+import numpy as np
 
 from safetensors.torch import load_file
 from huggingface_hub import snapshot_download
@@ -224,27 +225,45 @@ class ChatterboxTurboTTS:
             s3gen_ref_wav = self.norm_loudness(s3gen_ref_wav, _sr)
 
         ref_16k_wav = librosa.resample(s3gen_ref_wav, orig_sr=S3GEN_SR, target_sr=S3_SR)
+        ref_16k_wav = ref_16k_wav.astype("float32", copy=False)
 
-        s3gen_ref_wav = s3gen_ref_wav[:self.DEC_COND_LEN]
+        # Ensure reference wav is float32 and cropped to decoder conditional length
+        s3gen_ref_wav = s3gen_ref_wav[:self.DEC_COND_LEN].astype("float32")
         s3gen_ref_dict = self.s3gen.embed_ref(s3gen_ref_wav, S3GEN_SR, device=self.device)
 
+        # Match dtypes to respective model weights to avoid Float/Double mismatches
+        t3_dtype = next(self.t3.parameters()).dtype
+        s3_dtype = next(self.s3gen.parameters()).dtype
+
+        # Convert arrays/tensors in the S3Gen reference dict to the model's dtype/device
+        for k, v in list(s3gen_ref_dict.items()):
+            if torch.is_tensor(v):
+                s3gen_ref_dict[k] = v.to(device=self.device, dtype=s3_dtype)
+            elif isinstance(v, np.ndarray):
+                s3gen_ref_dict[k] = torch.from_numpy(v).to(device=self.device, dtype=s3_dtype)
+            elif isinstance(v, (list, tuple)):
+                try:
+                    s3gen_ref_dict[k] = torch.tensor(v, dtype=s3_dtype, device=self.device)
+                except Exception:
+                    pass
+                
         # Speech cond prompt tokens
         if plen := self.t3.hp.speech_cond_prompt_len:
             s3_tokzr = self.s3gen.tokenizer
             t3_cond_prompt_tokens, _ = s3_tokzr.forward([ref_16k_wav[:self.ENC_COND_LEN]], max_len=plen)
             t3_cond_prompt_tokens = torch.atleast_2d(t3_cond_prompt_tokens).to(self.device)
 
-        # Voice-encoder speaker embedding
-        ve_embed = torch.from_numpy(self.ve.embeds_from_wavs([ref_16k_wav], sample_rate=S3_SR))
-        ve_embed = ve_embed.mean(axis=0, keepdim=True).to(self.device)
+        # Voice-encoder speaker embedding (match T3 dtype)
+        ve_np = self.ve.embeds_from_wavs([ref_16k_wav], sample_rate=S3_SR)
+        ve_embed = torch.from_numpy(ve_np).mean(axis=0, keepdim=True).to(self.device, dtype=t3_dtype)
 
         t3_cond = T3Cond(
             speaker_emb=ve_embed,
             cond_prompt_speech_tokens=t3_cond_prompt_tokens,
-            emotion_adv=exaggeration * torch.ones(1, 1, 1),
+            emotion_adv=torch.ones(1, 1, 1, dtype=t3_dtype) * exaggeration,
         ).to(device=self.device)
         self.conds = Conditionals(t3_cond, s3gen_ref_dict)
-
+            
     def generate(
         self,
         text,
@@ -293,4 +312,11 @@ class ChatterboxTurboTTS:
         )
         wav = wav.squeeze(0).detach().cpu().numpy()
         watermarked_wav = self.watermarker.apply_watermark(wav, sample_rate=self.sr)
-        return torch.from_numpy(watermarked_wav).unsqueeze(0)
+        # Ensure float32 for Torch conversion to avoid dtype mismatches
+        if not isinstance(watermarked_wav, np.ndarray):
+            watermarked_wav = np.asarray(watermarked_wav)
+        watermarked_wav = watermarked_wav.astype("float32", copy=False)
+        out = torch.from_numpy(watermarked_wav).unsqueeze(0)
+        # Match S3Gen weights dtype
+        out = out.to(dtype=next(self.s3gen.parameters()).dtype)
+        return out

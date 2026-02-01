@@ -1,5 +1,9 @@
 .vscode
 
+# Environment variables
+.env
+.env.local
+
 # Pylance
 pyrightconfig.json
 
@@ -46,3 +50,8 @@ checkpoints/
 
 # Ignore generated sample .wav files
 **/*.wav
+
+# Batch output directory with large files
+batch_output/
+*.zip
+=======

@@ -206,3 +206,85 @@ def delete_voice(voice_name):
         
     except Exception as e:
         return f"❌ Error deleting voice: {str(e)}", gr.update()
+
+
+def bulk_clone_voices(audio_files, voice_names_text, voice_gender, voice_language):
+    """Clone multiple voices at once from uploaded files."""
+    try:
+        # Input validations
+        if not audio_files:
+            return "❌ Error: No audio files uploaded."
+        
+        if not voice_names_text or not voice_names_text.strip():
+            return "❌ Error: Please enter voice names (one per line)."
+        
+        # Parse voice names (one per line)
+        voice_names = [name.strip() for name in voice_names_text.strip().split('\n') if name.strip()]
+        
+        # Validate counts match
+        num_files = len(audio_files)
+        num_names = len(voice_names)
+        
+        if num_files != num_names:
+            return f"❌ Error: Number of files ({num_files}) doesn't match number of names ({num_names}).\n\nPlease provide exactly one name per uploaded file."
+        
+        # Clone each voice
+        results = []
+        success_count = 0
+        failed_count = 0
+        
+        for i, (audio_file, voice_name) in enumerate(zip(audio_files, voice_names)):
+            try:
+                # Sanitize voice name
+                voice_name = voice_name.strip()
+                
+                if not voice_name:
+                    results.append(f"❌ File {i+1}: Empty name - skipped")
+                    failed_count += 1
+                    continue
+                
+                # Add gender suffix
+                full_voice_name = f"{voice_name}_{voice_gender}"
+                
+                # Add language tag for non-English voices
+                if voice_language and voice_language != "en":
+                    full_voice_name = f"{full_voice_name}_{voice_language}"
+                
+                # Check if voice already exists
+                if full_voice_name in VOICES["samples"]:
+                    results.append(f"⚠️ '{voice_name}': Already exists - skipped")
+                    failed_count += 1
+                    continue
+                
+                # Save the audio file
+                wav_path = os.path.join(VOICE_DIR, f"{full_voice_name}.wav")
+                shutil.copy(audio_file, wav_path)
+                
+                # Update voices dictionary
+                VOICES["samples"][full_voice_name] = wav_path
+                
+                # Format display name
+                display_name = format_voice_display_name(full_voice_name)
+                results.append(f"✅ '{display_name}': Cloned successfully")
+                success_count += 1
+                
+            except Exception as e:
+                results.append(f"❌ '{voice_name}': Error - {str(e)}")
+                failed_count += 1
+        
+        # Create summary
+        summary = f"""📊 Bulk Cloning Complete!
+
+✅ Successfully cloned: {success_count}
+❌ Failed/Skipped: {failed_count}
+📁 Total processed: {num_files}
+
+Details:
+{'─' * 50}
+"""
+        summary += "\n".join(results)
+        
+        return summary
+        
+    except Exception as e:
+        return f"❌ Error in bulk cloning: {str(e)}"

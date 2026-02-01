@@ -50,9 +50,9 @@ def create_tts_tab():
             
             voice_select_tts = gr.Dropdown(
                 label="Select Voice",
-                choices=get_voices_for_language("en"),
-                value=f"Default ({SUPPORTED_LANGUAGES['en']})",
-                info="Select a cloned voice or use default"
+                choices=["None"] + get_voices_for_language("en"),
+                value="None",
+                info="Select a cloned voice or use default (None)"
             )
             
             preview_audio_tts = gr.Audio(label="Voice Preview", interactive=False, visible=True)
@@ -74,7 +74,7 @@ def create_tts_tab():
         with gr.Column():
             progress_bar_tts = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_tts = gr.Textbox(label="Status", value="Ready to generate...", lines=3, interactive=False)
-            audio_output_tts = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+            audio_output_tts = gr.Audio(label="Generated Audio", autoplay=True)
 
     return {
         "text": text,
@@ -137,7 +137,7 @@ def create_multilingual_tab():
         with gr.Column():
             progress_bar_mtl = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_mtl = gr.Textbox(label="Status", value="Ready to generate...", lines=3, interactive=False)
-            audio_output_mtl = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+            audio_output_mtl = gr.Audio(label="Generated Audio", autoplay=True)
             
             gr.Markdown(f"""
             ### Supported Languages ({len(SUPPORTED_LANGUAGES)}):
@@ -189,7 +189,7 @@ def create_voice_conversion_tab():
         with gr.Column():
             progress_bar_vc = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_vc = gr.Textbox(label="Status", value="Ready to convert...", lines=3, interactive=False)
-            audio_output_vc = gr.Audio(label="Converted Audio", autoplay=True, show_download_button=True)
+            audio_output_vc = gr.Audio(label="Converted Audio", autoplay=True)
 
     return {
         "input_audio": input_audio_vc,
@@ -206,48 +206,91 @@ def create_clone_voice_tab():
     """Create the UI for Clone Voice tab."""
     with gr.Row():
         with gr.Column():
-            gr.Markdown("""
-            ### Clone any voice instantly!
+            # Single Voice Cloning Section
+            with gr.Accordion("🎤 Clone Single Voice", open=True):
+                gr.Markdown("""
+                **Quick single voice cloning:**
+                1. Upload or record audio (5-30 seconds)
+                2. Name your voice and select gender
+                3. Click "Clone Voice"
+                
+                **Tips:** Clear audio, no background noise, 10-20 seconds ideal
+                """)
+                
+                new_voice_name = gr.Textbox(
+                    label="Voice Name",
+                    placeholder="e.g., Amitabh, Priyanka, Morgan..."
+                )
+                
+                voice_gender = gr.Radio(
+                    label="Gender",
+                    choices=[("Male ♂️", "male"), ("Female ♀️", "female")],
+                    value="male",
+                    info="Select the gender for display purposes"
+                )
+                
+                voice_language = gr.Dropdown(
+                    label="Voice Language",
+                    choices=[(f"{name} ({code})", code) for code, name in sorted(SUPPORTED_LANGUAGES.items())],
+                    value="en",
+                    info="Select the language of the voice sample"
+                )
+                
+                ref_audio_input = gr.Audio(
+                    label="Reference Audio Sample",
+                    sources=["upload", "microphone"],
+                    type="filepath"
+                )
+                clone_btn = gr.Button("🧬 Clone Voice", variant="primary", size="lg")
             
-            **How to clone:**
-            1. Upload or record a clear audio sample (5-30 seconds)
-            2. Name your voice and select gender
-            3. Select the language
-            4. Click "Clone Voice"
-            5. Use it in any tab!
-            
-            **Tips for best results:**
-            - Use clear, high-quality audio
-            - Avoid background noise
-            - 10-20 seconds is ideal
-            - Multiple sentences work better
-            """)
-            
-            new_voice_name = gr.Textbox(
-                label="Voice Name",
-                placeholder="e.g., Amitabh, Priyanka, Morgan..."
-            )
-            
-            voice_gender = gr.Radio(
-                label="Gender",
-                choices=[("Male ♂️", "male"), ("Female ♀️", "female")],
-                value="male",
-                info="Select the gender for display purposes"
-            )
-            
-            voice_language = gr.Dropdown(
-                label="Voice Language",
-                choices=[(f"{name} ({code})", code) for code, name in sorted(SUPPORTED_LANGUAGES.items())],
-                value="en",
-                info="Select the language of the voice sample"
-            )
-            
-            ref_audio_input = gr.Audio(
-                label="Reference Audio Sample",
-                sources=["upload", "microphone"],
-                type="filepath"
-            )
-            clone_btn = gr.Button("🧬 Clone Voice", variant="primary", size="lg")
+            # Bulk Voice Cloning Section
+            with gr.Accordion("📦 Bulk Clone Multiple Voices", open=False):
+                gr.Markdown("""
+                **Clone multiple voices at once:**
+                1. Upload multiple audio files
+                2. Enter names (one per line, matching file order)
+                3. Select gender and language for all
+                4. Click "Clone All Voices"
+                
+                **Example names:**
+                ```
+                Morgan
+                Sarah
+                David
+                Emma
+                ```
+                """)
+                
+                bulk_audio_files = gr.File(
+                    label="Upload Multiple Audio Files",
+                    file_count="multiple",
+                    file_types=[".wav", ".mp3", ".flac", ".m4a"],
+                    type="filepath"
+                )
+                
+                bulk_voice_names = gr.Textbox(
+                    label="Voice Names (one per line)",
+                    placeholder="Morgan\nSarah\nDavid\nEmma\n...",
+                    lines=10,
+                    info="Enter one name per line, matching the order of uploaded files"
+                )
+                
+                bulk_voice_gender = gr.Radio(
+                    label="Gender for All Voices",
+                    choices=[("Male ♂️", "male"), ("Female ♀️", "female")],
+                    value="male",
+                    info="This gender will be applied to all voices"
+                )
+                
+                bulk_voice_language = gr.Dropdown(
+                    label="Language for All Voices",
+                    choices=[(f"{name} ({code})", code) for code, name in sorted(SUPPORTED_LANGUAGES.items())],
+                    value="en",
+                    info="This language will be applied to all voices"
+                )
+                
+                bulk_clone_btn = gr.Button("🧬 Clone All Voices", variant="primary", size="lg")
+                bulk_clone_status = gr.Textbox(label="Bulk Cloning Status", lines=5)
             
         with gr.Column():
             clone_status = gr.Textbox(label="Cloning Status", lines=3)
@@ -295,12 +338,233 @@ def create_clone_voice_tab():
         "current_voices_display": current_voices_display,
         "voice_to_delete": voice_to_delete,
         "delete_btn": delete_btn_clone,
-        "delete_status": delete_status_clone
+        "delete_status": delete_status_clone,
+        "bulk_audio_files": bulk_audio_files,
+        "bulk_voice_names": bulk_voice_names,
+        "bulk_voice_gender": bulk_voice_gender,
+        "bulk_voice_language": bulk_voice_language,
+        "bulk_clone_btn": bulk_clone_btn,
+        "bulk_clone_status": bulk_clone_status
     }
 
 
+def create_batch_generation_tab():
+    """Create the UI for Batch Generation tab with 100 individual text fields."""
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("""
+            ### 📦 Batch Audio Generation with AI
+            
+            **How to use:**
+            1. **AI Text Generation (Optional):**
+               - Enter a topic and duration
+               - Click "🤖 Generate All Texts" to auto-fill all fields
+               - Or use individual "Generate" buttons per field
+            2. **Manual Entry:** Enter texts directly in fields
+            3. Choose voice and model
+            4. Click "🎵 Generate All Audio Files"
+            
+            **Features:**
+            - 🤖 AI-powered text generation (OpenAI GPT-4o-mini)
+            - Up to 100 individual text inputs
+            - Individual audio outputs for each text
+            - Use same voice for all or select individually
+            - Download each file separately
+            """)
+            
+            # AI Text Generation Section
+            with gr.Accordion("🤖 AI Text Generation", open=True):
+                gr.Markdown("""
+                **Auto-generate content for all fields using AI**
+                
+                Set your OPENAI_API_KEY environment variable before using this feature.
+                """)
+                
+                ai_topic = gr.Textbox(
+                    label="Topic",
+                    placeholder="e.g., motivational speeches, product descriptions, bedtime stories...",
+                    info="What should the AI generate content about?"
+                )
+                
+                ai_duration_minutes = gr.Number(
+                    label="Duration per Text (minutes)",
+                    value=1,
+                    minimum=0.1,
+                    maximum=60,
+                    step=0.1,
+                    info="How long should each audio be in minutes?"
+                )
+                
+                ai_num_texts = gr.Slider(
+                    label="Number of Texts to Generate",
+                    minimum=1,
+                    maximum=100,
+                    value=10,
+                    step=1,
+                    info="How many fields to fill (1-100)"
+                )
+                
+                generate_all_texts_btn = gr.Button(
+                    "🤖 Generate All Texts with AI",
+                    variant="secondary",
+                    size="lg"
+                )
+                
+                ai_status = gr.Textbox(
+                    label="AI Generation Status",
+                    value="Ready to generate texts...",
+                    lines=3,
+                    interactive=False
+                )
+            
+            gr.Markdown("---")
+            
+            # Voice selection options
+            use_same_voice = gr.Checkbox(
+                label="Use same voice for all texts",
+                value=True,
+                info="Uncheck to select voice for each text individually"
+            )
+            
+            # Get available voices for English
+            available_voices_for_all = get_voices_for_language("en")
+            default_voice_for_all = available_voices_for_all[0] if available_voices_for_all else None
+            
+            voice_for_all = gr.Dropdown(
+                label="Voice for All Texts",
+                choices=available_voices_for_all,
+                value=default_voice_for_all,
+                info="This voice will be used when 'Use same voice' is checked",
+                visible=True
+            )
+            
+            batch_model_type = gr.Radio(
+                label="Model Type",
+                choices=[
+                    ("⚡ Turbo (English - Fastest, Best Quality)", "turbo"),
+                    ("TTS Main (English)", "tts"),
+                    ("Multilingual", "multilingual")
+                ],
+                value="turbo",
+                info="Turbo is recommended for best speed and quality (requires voice selection)"
+            )
+            
+            batch_language_select = gr.Dropdown(
+                label="Language (for Multilingual only)",
+                choices=[(f"{name} ({code})", code) for code, name in sorted(SUPPORTED_LANGUAGES.items())],
+                value="en",
+                visible=False,
+                info="Select language for multilingual model"
+            )
+            
+            generate_all_btn = gr.Button("🎵 Generate All Audio Files", variant="primary", size="lg")
+            
+            progress_bar_batch = gr.Slider(label="Overall Progress", minimum=0, maximum=100, value=0, interactive=False)
+            status_box_batch = gr.Textbox(label="Status", value="Ready to generate...", lines=8, interactive=False)
+            
+        with gr.Column(scale=2):
+            gr.Markdown("### 📝 Text Inputs & Audio Outputs")
+            
+            # Create 100 text input and audio output pairs
+            batch_inputs = []
+            batch_audio_outputs = []
+            batch_voice_selects = []
+            batch_generate_btns = []  # Individual generate buttons
+            
+            # Get available voices for English
+            available_voices = get_voices_for_language("en")
+            default_voice = available_voices[0] if available_voices else None
+            
+            for i in range(100):
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        with gr.Row():
+                            text_input = gr.Textbox(
+                                label=f"Text {i+1}",
+                                placeholder=f"Enter text {i+1} or use AI generation...",
+                                lines=2,
+                                max_lines=3,
+                                scale=4
+                            )
+                            
+                            # Individual AI generate button for this field
+                            gen_btn = gr.Button(
+                                "🤖",
+                                size="sm",
+                                scale=1,
+                                elem_id=f"gen_btn_{i}"
+                            )
+                            batch_generate_btns.append(gen_btn)
+                        
+                        batch_inputs.append(text_input)
+                        
+                    with gr.Column(scale=1):
+                        voice_select = gr.Dropdown(
+                            label=f"Voice {i+1}",
+                            choices=available_voices,
+                            value=default_voice,
+                            visible=False,
+                            interactive=True
+                        )
+                        batch_voice_selects.append(voice_select)
+                        
+                        audio_output = gr.Audio(
+                            label=f"Audio {i+1}",
+                            interactive=False,
+                            visible=True
+                        )
+                        batch_audio_outputs.append(audio_output)
+            
+    # Show/hide language selector based on model type
+    def update_language_visibility(model_type):
+        return gr.update(visible=(model_type == "multilingual"))
+    
+    # Show/hide individual voice selectors based on checkbox
+    def update_voice_visibility(use_same):
+        return [gr.update(visible=not use_same) for _ in range(100)]
+        
+    def update_voice_for_all_visibility(use_same):
+        return gr.update(visible=use_same)
+    
+    batch_model_type.change(
+        fn=update_language_visibility,
+        inputs=[batch_model_type],
+        outputs=[batch_language_select]
+    )
+    
+    use_same_voice.change(
+        fn=update_voice_visibility,
+        inputs=[use_same_voice],
+        outputs=batch_voice_selects
+    )
+    
+    use_same_voice.change(
+        fn=update_voice_for_all_visibility,
+        inputs=[use_same_voice],
+        outputs=[voice_for_all]
+    )
+        
+    return {
+        "batch_inputs": batch_inputs,
+        "batch_audio_outputs": batch_audio_outputs,
+        "batch_voice_selects": batch_voice_selects,
+        "batch_generate_btns": batch_generate_btns,
+        "use_same_voice": use_same_voice,
+        "voice_for_all": voice_for_all,
+        "batch_model_type": batch_model_type,
+        "batch_language_select": batch_language_select,
+        "generate_all_btn": generate_all_btn,
+        "progress_bar": progress_bar_batch,
+        "status_box": status_box_batch,
+        "ai_topic": ai_topic,
+        "ai_duration_minutes": ai_duration_minutes,
+        "ai_num_texts": ai_num_texts,
+        "generate_all_texts_btn": generate_all_texts_btn,
+        "ai_status": ai_status
+    }
+            
+
 def create_turbo_tab():
-    """Create the UI for Turbo TTS tab."""
     with gr.Row():
         with gr.Column():
             gr.Markdown("""
@@ -346,8 +610,8 @@ def create_turbo_tab():
             voice_select_turbo = gr.Dropdown(
                 label="Select Voice (Required for Turbo)",
                 choices=get_voices_for_language("en"),
-                value=f"Default ({SUPPORTED_LANGUAGES['en']})",
-                info="Turbo requires a reference voice clip for cloning"
+                value=None,
+                info="Turbo requires a reference voice clip (clone a voice first)"
             )
             
             preview_audio_turbo = gr.Audio(label="Voice Preview", interactive=False, visible=True)
@@ -360,7 +624,7 @@ def create_turbo_tab():
         with gr.Column():
             progress_bar_turbo = gr.Slider(label="Progress", minimum=0, maximum=100, value=0, interactive=False)
             status_box_turbo = gr.Textbox(label="Status", value="Ready to generate...", lines=3, interactive=False)
-            audio_output_turbo = gr.Audio(label="Generated Audio", autoplay=True, show_download_button=True)
+            audio_output_turbo = gr.Audio(label="Generated Audio", autoplay=True)
             
             gr.Markdown("""
             ### 💡 Tips for Best Results:

@@ -12,3 +12,11 @@ pykakasi==2.3.0
 gradio==5.44.1
 pyloudnorm
 omegaconf
+openai>=1.0.0
+python-dotenv
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+supabase>=2.0.0
+requests>=2.31.0
+scipy>=1.11.0

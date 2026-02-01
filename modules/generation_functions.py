@@ -418,3 +418,241 @@ def generate_turbo_speech(text, voice_name):
         error_status = f"❌ Error generating speech: {str(e)}"
         yield 0, None, error_status
 
+
+def generate_batch_speech(texts, voices, model_type, language_code=None):
+    """
+    Generate multiple audio files from batch text input.
+    
+    Args:
+        texts: List of text strings to generate audio for
+        voices: List of voice names to use for each text
+        model_type: "tts" (English), "multilingual", or "turbo"
+        language_code: Language code (required for multilingual)
+    
+    Yields:
+        progress: Progress percentage (0-100)
+        audio_data: Audio data for the current text (sample_rate, audio_array)
+        status_update: Status message
+        audio_index: Index of the audio in the texts list
+    """
+    import os
+    import scipy.io.wavfile as wavfile
+    from datetime import datetime
+    
+    try:
+        start_time = time.time()
+        
+        # Input validations
+        if not texts:
+            yield 0, None, "❌ Error: No valid texts provided.", None
+            return
+        
+        total_texts = len(texts)
+        
+        if total_texts > 1000:
+            yield 0, None, f"❌ Error: Maximum 1000 texts allowed. You provided {total_texts}.", None
+            return
+        
+        yield 5, None, f"📝 Found {total_texts} text{'s' if total_texts != 1 else ''} to generate...", None
+        
+        # Validate voices
+        if len(voices) != len(texts):
+            yield 0, None, f"❌ Error: Number of voices ({len(voices)}) does not match number of texts ({len(texts)}).", None
+            return
+        
+        # Create output directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join("batch_output", f"batch_{timestamp}")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        yield 10, None, f"📁 Output directory: {output_dir}", None
+        
+        # Load appropriate model
+        yield 15, None, f"Loading {model_type.upper()} model...", None
+        
+        if model_type == "tts":
+            model = model_manager.get_tts_model()
+        elif model_type == "multilingual":
+            if not language_code:
+                yield 0, None, "❌ Error: Language code required for multilingual generation.", None
+                return
+            model = model_manager.get_mtl_model()
+        elif model_type == "turbo":
+            model = model_manager.get_turbo_model()
+        else:
+            yield 0, None, f"❌ Error: Invalid model type '{model_type}'.", None
+            return
+        
+        if model is None:
+            yield 0, None, f"❌ Error: Failed to load {model_type} model.", None
+            return
+        
+        # Generate audio for each text
+        generated_files = []
+        failed_count = 0
+        
+        for i, (text, voice_name) in enumerate(zip(texts, voices)):
+            progress = 20 + int((i / total_texts) * 75)
+            yield progress, None, f"Generating {i+1}/{total_texts}: {text[:50]}{'...' if len(text) > 50 else ''}", None
+            
+            # Skip if text is empty
+            if not text or not text.strip():
+                yield progress, None, f"⏭️ Skipping text {i+1} (empty)", i
+                continue
+            
+            # Resolve voice path for this text
+            if voice_name and voice_name != "None":
+                # Debug: Print voice name being processed
+                print(f"DEBUG: Processing voice '{voice_name}' for text {i+1}")
+                
+                if model_type == "multilingual":
+                    audio_prompt_path = resolve_voice_path(voice_name, language_code or "en")
+                else:
+                    audio_prompt_path = resolve_voice_path(voice_name, "en")
+                
+                # Debug: Print resolved path
+                print(f"DEBUG: Resolved path for '{voice_name}': {audio_prompt_path}")
+                
+                if not audio_prompt_path:
+                    # For turbo model, voice is required
+                    if model_type == "turbo":
+                        error_msg = f"❌ Error: Voice '{voice_name}' not found for text {i+1}. Turbo requires a valid voice."
+                        print(f"DEBUG: {error_msg}")
+                        yield progress, None, error_msg, i
+                        failed_count += 1
+                        continue
+                    
+                    yield progress, None, f"⚠️ Warning: Voice '{voice_name}' not found for text {i+1}. Using default.", None
+                    if model_type == "multilingual" and language_code:
+                        audio_prompt_path = LANGUAGE_CONFIG.get(language_code, {}).get("audio")
+                    else:
+                        audio_prompt_path = None
+            else:
+                # For turbo model, voice is required
+                if model_type == "turbo":
+                    error_msg = f"❌ Error: No voice selected for text {i+1}. Turbo requires a voice."
+                    print(f"DEBUG: {error_msg}")
+                    yield progress, None, error_msg, i
+                    failed_count += 1
+                    continue
+                
+                if model_type == "multilingual" and language_code:
+                    audio_prompt_path = LANGUAGE_CONFIG.get(language_code, {}).get("audio")
+                else:
+                    audio_prompt_path = None
+                        
+            # Generate audio based on model type
+            try:
+                if model_type == "tts":
+                    wav = model.generate(
+                        text,
+                        audio_prompt_path=audio_prompt_path,
+                        exaggeration=0.5,
+                        temperature=0.8,
+                        cfg_weight=0.5,
+                        min_p=0.05,
+                        top_p=1.0,
+                        repetition_penalty=1.2
+                    )
+                elif model_type == "multilingual":
+                    wav = model.generate(
+                        text,
+                        language_id=language_code,
+                        audio_prompt_path=audio_prompt_path,
+                        exaggeration=0.5,
+                        temperature=0.8,
+                        cfg_weight=0.5
+                    )
+                elif model_type == "turbo":
+                    # CRITICAL: Turbo model needs chunking just like single TTS!
+                    # Generate with chunking to match the working single Turbo TTS behavior
+                    text_chunks = smart_chunk_text(text)
+                    chunk_wavs = []
+                    
+                    for chunk in text_chunks:
+                        chunk_wav = model.generate(
+                            chunk,
+                            audio_prompt_path=audio_prompt_path
+                        )
+                        chunk_wavs.append(chunk_wav)
+                    
+                    # Concatenate chunks if multiple
+                    if len(chunk_wavs) > 1:
+                        wav = torch.cat(chunk_wavs, dim=-1)
+                    else:
+                        wav = chunk_wavs[0]
+                    
+                # Save audio file
+                filename = f"audio_{i+1:04d}.wav"
+                filepath = os.path.join(output_dir, filename)
+                
+                # CRITICAL: Match the exact conversion process used in single Turbo TTS
+                # The working single TTS does: full_wav.squeeze(0).numpy()
+                # We must do the same to preserve audio quality
+                if hasattr(wav, 'is_cuda') and wav.is_cuda:
+                    wav_numpy = wav.squeeze(0).cpu().numpy()
+                else:
+                    # This is the key: call .numpy() directly without intermediate conversions
+                    wav_numpy = wav.squeeze(0).numpy() if hasattr(wav, 'squeeze') else wav.numpy()
+                
+                # Convert to int16 for wav file (scipy expects int16)
+                # wav_numpy is already in the correct float format from the model
+                wav_int16 = (wav_numpy * 32767).astype(np.int16)
+                wavfile.write(filepath, model.sr, wav_int16)
+                generated_files.append(filepath)
+                
+                # Return the audio data for display in the UI
+                # Use the original wav_numpy without any additional conversions
+                audio_data = (model.sr, wav_numpy)
+                yield progress, audio_data, f"Generated audio {i+1}/{total_texts}", i
+                        
+            except Exception as e:
+                error_msg = f"Failed to generate audio {i+1}: {str(e)}"
+                print(error_msg)
+                yield progress, None, error_msg, i
+                failed_count += 1
+                continue
+                        
+        yield 95, None, "Finalizing batch generation...", None
+        
+        # Create summary file
+        summary_path = os.path.join(output_dir, "summary.txt")
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write(f"Batch Generation Summary\n")
+            f.write(f"========================\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Model: {model_type.upper()}\n")
+            f.write(f"\nTotal texts: {total_texts}\n")
+            f.write(f"Successfully generated: {len(generated_files)}\n")
+            f.write(f"Failed: {failed_count}\n\n")
+            f.write(f"Generated Files:\n")
+            f.write(f"================\n")
+            for i, text in enumerate(texts):
+                status = "✓" if i < len(generated_files) else "✗"
+                voice_info = f" (Voice: {voices[i]})" if voices[i] else ""
+                f.write(f"{status} {i+1:04d}. {text}{voice_info}\n")
+        
+        # Calculate total time
+        total_time = time.time() - start_time
+        
+        final_status = f"""✅ Batch generation complete!
+        
+📊 Summary:
+- Total texts: {total_texts}
+- Successfully generated: {len(generated_files)}
+- Failed: {failed_count}
+- Time taken: {format_time(total_time)}
+- Output directory: {output_dir}
+
+📁 Files saved:
+- {len(generated_files)} audio files (.wav)
+- 1 summary file (summary.txt)
+
+You can download individual files or use the "Download All" button to get a zip file.
+"""
+        
+        yield 100, None, final_status, None
+        
+    except Exception as e:
+        error_status = f"❌ Error in batch generation: {str(e)}"
+        yield 0, None, error_status, None

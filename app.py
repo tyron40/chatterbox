@@ -22,13 +22,19 @@ from modules.voice_manager import (
     get_all_voices_with_gender,
     resolve_voice_path,
     clone_voice,
-    delete_voice
+    delete_voice,
+    bulk_clone_voices
 )
 from modules.generation_functions import (
     generate_speech,
     generate_multilingual_speech,
     convert_voice,
-    generate_turbo_speech
+    generate_turbo_speech,
+    generate_batch_speech
+)
+from modules.ai_text_generator import (
+    generate_single_text,
+    generate_all_texts
 )
 
 # Import UI components
@@ -38,6 +44,7 @@ from modules.ui_components import (
     create_multilingual_tab,
     create_voice_conversion_tab,
     create_clone_voice_tab,
+    create_batch_generation_tab,
     create_turbo_tab
 )
 
@@ -77,7 +84,7 @@ CUSTOM_CSS = """
 # ---------------------------
 # Main Application
 # ---------------------------
-with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUSTOM_CSS) as demo:
+with gr.Blocks(title="Chatterbox TTS Enhanced") as demo:
     # State variables
     tts_model_state = gr.State(None)
     vc_model_state = gr.State(None)
@@ -101,6 +108,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     
     with gr.Tab("🧬 Clone Voice"):
         clone_components = create_clone_voice_tab()
+
+    with gr.Tab("📦 Batch Generation"):
+        batch_components = create_batch_generation_tab()
     
     # ---------------------------
     # Event Handlers - TTS Tab
@@ -372,6 +382,12 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     ).then(
         fn=lambda: gr.update(choices=["None"] + get_all_voices_with_gender(), value="None"),
         outputs=[clone_components['voice_to_delete']]
+    ).then(
+        fn=lambda: gr.update(choices=get_voices_for_language("en")),
+        outputs=[batch_components['voice_for_all']]
+    ).then(
+        fn=lambda: [gr.update(choices=get_voices_for_language("en"))] * 100,
+        outputs=batch_components['batch_voice_selects']
     )
     
     # Delete voice functionality in Clone Voice tab
@@ -396,10 +412,239 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
         fn=lambda: "\n".join(load_voices()) if load_voices() else "No voices cloned yet",
         outputs=[clone_components['current_voices_display']]
     )
+    
+    # Bulk clone voices functionality
+    clone_components['bulk_clone_btn'].click(
+        fn=bulk_clone_voices,
+        inputs=[
+            clone_components['bulk_audio_files'],
+            clone_components['bulk_voice_names'],
+            clone_components['bulk_voice_gender'],
+            clone_components['bulk_voice_language']
+        ],
+        outputs=[clone_components['bulk_clone_status']]
+    ).then(
+        fn=lambda: gr.update(choices=get_voices_for_language("en")),
+        outputs=[tts_components['voice_select']]
+    ).then(
+        fn=lambda: gr.update(choices=get_voices_for_language("en")),
+        outputs=[turbo_components['voice_select']]
+    ).then(
+        fn=lambda lang: gr.update(choices=get_voices_for_language(lang)),
+        inputs=[mtl_components['language_select']],
+        outputs=[mtl_components['voice_select']]
+    ).then(
+        fn=lambda: gr.update(choices=["None"] + get_all_voices_with_gender()),
+        outputs=[vc_components['target_voice_select']]
+    ).then(
+        fn=lambda: gr.update(choices=get_voices_for_language("en")),
+        outputs=[batch_components['voice_for_all']]
+    ).then(
+        fn=lambda: [gr.update(choices=get_voices_for_language("en"))] * 100,
+        outputs=batch_components['batch_voice_selects']
+    ).then(
+        fn=lambda: "\n".join(load_voices()) if load_voices() else "No voices cloned yet",
+        outputs=[clone_components['current_voices_display']]
+    ).then(
+        fn=lambda: gr.update(choices=["None"] + get_all_voices_with_gender(), value="None"),
+        outputs=[clone_components['voice_to_delete']]
+    )
 
+    # ---------------------------
+    # Event Handlers - Batch Generation Tab
+    # ---------------------------
+    # Function to handle batch generation with individual text fields
+    def process_batch_generation(use_same_voice, voice_for_all, model_type, language_select, *inputs):
+        # Split inputs: first 100 are text inputs, next 100 are voice selections
+        text_inputs = inputs[:100]
+        voice_inputs = inputs[100:200] if len(inputs) >= 200 else []
+        
+        # Filter out empty text inputs and get their indices
+        valid_texts = []
+        valid_indices = []
+        for i, text in enumerate(text_inputs):
+            if text and text.strip():
+                valid_texts.append(text)
+                valid_indices.append(i)
+        
+        if not valid_texts:
+            return [0] + [None] * 100 + ["No valid text inputs found. Please enter at least one text."]
+        
+        # Collect voice selections for each valid text
+        voices = []
+        if use_same_voice:
+            # Use the same voice for all texts
+            voices = [voice_for_all] * len(valid_texts)
+        else:
+            # Use individual voice selections from the voice dropdowns
+            for idx in valid_indices:
+                if voice_inputs and idx < len(voice_inputs):
+                    voice = voice_inputs[idx]
+                else:
+                    # Fallback to first available voice if voice input is missing
+                    available_voices = get_voices_for_language("en")
+                    voice = available_voices[0] if available_voices else None
+                voices.append(voice)
+        
+        # Call the batch generation function with the collected texts and voices
+        # The generate_batch_speech function is a generator that yields progress updates
+        progress = 0
+        status = "Starting batch generation..."
+        audio_outputs = [None] * 100
+        
+        # Pass individual texts and voices to generate_batch_speech
+        for progress_update, audio_data, status_update, audio_index in generate_batch_speech(valid_texts, voices, model_type, language_select):
+            progress = progress_update
+            status = status_update
+            
+            # If audio data is returned, update the corresponding audio output
+            if audio_data is not None and audio_index is not None:
+                # Map back to the original index
+                if audio_index < len(valid_indices):
+                    original_index = valid_indices[audio_index]
+                    audio_outputs[original_index] = audio_data
+        
+        # Return progress, audio outputs for all slots, and status
+        return [progress] + audio_outputs + [status]
+                    
+    # Connect the generate button to the processing function
+    # Include both text inputs and voice selections
+    batch_components['generate_all_btn'].click(
+        fn=process_batch_generation,
+        inputs=[
+            batch_components['use_same_voice'],
+            batch_components['voice_for_all'],
+            batch_components['batch_model_type'],
+            batch_components['batch_language_select'],
+            *batch_components['batch_inputs'],
+            *batch_components['batch_voice_selects']
+        ],
+        outputs=[
+            batch_components['progress_bar'],
+            *batch_components['batch_audio_outputs'],
+            batch_components['status_box']
+        ]
+    )
+                    
+    # ---------------------------
+    # Event Handlers - AI Text Generation (Batch Tab)
+    # ---------------------------
+    # Function to generate all texts using AI
+    def process_generate_all_texts(topic, duration_minutes, num_texts):
+        """Generate multiple texts using AI and update all text fields."""
+        try:
+            if not topic or not topic.strip():
+                return [gr.update()] * 100 + ["❌ Error: Please enter a topic for AI generation."]
+            
+            # Initialize all outputs as no-update
+            text_updates = [gr.update()] * 100
+            
+            # Generate texts using AI (duration is always in minutes)
+            for index, generated_text, status in generate_all_texts(topic, duration_minutes, "minutes", int(num_texts)):
+                # Update the specific text field
+                text_updates[index] = gr.update(value=generated_text)
+                
+            final_status = f"✅ Successfully generated {int(num_texts)} unique texts about: {topic}"
+            return text_updates + [final_status]
+            
+        except Exception as e:
+            error_status = f"❌ Error: {str(e)}\n\nMake sure OPENAI_API_KEY environment variable is set."
+            return [gr.update()] * 100 + [error_status]
+    
+    # Connect "Generate All Texts" button
+    batch_components['generate_all_texts_btn'].click(
+        fn=process_generate_all_texts,
+        inputs=[
+            batch_components['ai_topic'],
+            batch_components['ai_duration_minutes'],
+            batch_components['ai_num_texts']
+        ],
+        outputs=batch_components['batch_inputs'] + [batch_components['ai_status']]
+    )
+    
+    # Function to generate single text for individual button
+    def process_generate_single_text(topic, duration_minutes, field_index):
+        """Generate a single text using AI for a specific field."""
+        try:
+            if not topic or not topic.strip():
+                return gr.update(), "❌ Error: Please enter a topic for AI generation."
+            
+            # Generate unique text for this field (duration is always in minutes)
+            generated_text = generate_single_text(topic, duration_minutes, "minutes", variation_number=field_index+1)
+            
+            status = f"✅ Generated text for field {field_index+1}"
+            return gr.update(value=generated_text), status
+            
+        except Exception as e:
+            error_status = f"❌ Error: {str(e)}\n\nMake sure OPENAI_API_KEY environment variable is set."
+            return gr.update(), error_status
+    
+    # Connect individual generate buttons (one for each of the 100 fields)
+    for i, gen_btn in enumerate(batch_components['batch_generate_btns']):
+        gen_btn.click(
+            fn=lambda topic, dur_min, idx=i: process_generate_single_text(topic, dur_min, idx),
+            inputs=[
+                batch_components['ai_topic'],
+                batch_components['ai_duration_minutes']
+            ],
+            outputs=[batch_components['batch_inputs'][i], batch_components['ai_status']]
+        )
+                
+    # Add a function to create a zip file with all generated audio files
+    def create_download_all_button():
+        import os
+        import zipfile
+        from datetime import datetime
+        
+        # Create a button to download all generated audio files
+        download_all_btn = gr.Button("📦 Download All Audio Files", variant="secondary")
+        
+        def download_all_audio():
+            # Create a zip file with all generated audio files
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            zip_filename = f"batch_output/all_audio_{timestamp}.zip"
+            
+            # Ensure the directory exists
+            os.makedirs("batch_output", exist_ok=True)
+            
+            # Find the most recent batch output directory
+            batch_dirs = [d for d in os.listdir("batch_output") if d.startswith("batch_")]
+            if not batch_dirs:
+                return None, "No generated audio files found."
+            
+            # Sort by creation time (newest first)
+            batch_dirs.sort(reverse=True)
+            latest_batch_dir = os.path.join("batch_output", batch_dirs[0])
+            
+            # Create a zip file with all audio files
+            with zipfile.ZipFile(zip_filename, "w") as zipf:
+                for file in os.listdir(latest_batch_dir):
+                    if file.endswith(".wav"):
+                        zipf.write(os.path.join(latest_batch_dir, file), file)
+            
+            return zip_filename, f"All audio files downloaded as {zip_filename}"
+        
+        # Add the download button to the UI
+        download_all_btn.click(
+            fn=download_all_audio,
+            inputs=[],
+            outputs=[gr.File(label="Download"), gr.Textbox(label="Status")]
+        )
+        
+        return download_all_btn
+    
+    # Add the download all button to the batch generation tab
+    with gr.Row():
+        create_download_all_button()
+                        
 
 if __name__ == "__main__":
     demo.queue(
         max_size=50,
         default_concurrency_limit=1,
-    ).launch(inbrowser=True, show_error=True)
+    ).launch(
+        inbrowser=True, 
+        show_error=True,
+        theme=gr.themes.Soft(),
+        css=CUSTOM_CSS
+    )
