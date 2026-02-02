@@ -10,15 +10,60 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from supabase import create_client
-import torch
-import numpy as np
 
-# Import your TTS modules
+# Add project root to path
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from modules.model_manager import model_manager
-from modules.generation_functions import generate_turbo_speech, generate_speech
+# Lazy imports for heavy dependencies
+_torch = None
+_np = None
+_model_manager = None
+_generation_functions = None
+
+def get_torch():
+    """Lazy import torch"""
+    global _torch
+    if _torch is None:
+        try:
+            import torch
+            _torch = torch
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to import torch: {str(e)}")
+    return _torch
+
+def get_numpy():
+    """Lazy import numpy"""
+    global _np
+    if _np is None:
+        try:
+            import numpy as np
+            _np = np
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to import numpy: {str(e)}")
+    return _np
+
+def get_model_manager():
+    """Lazy import model_manager"""
+    global _model_manager
+    if _model_manager is None:
+        try:
+            from modules.model_manager import model_manager
+            _model_manager = model_manager
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to import model_manager: {str(e)}")
+    return _model_manager
+
+def get_generation_functions():
+    """Lazy import generation functions"""
+    global _generation_functions
+    if _generation_functions is None:
+        try:
+            from modules import generation_functions
+            _generation_functions = generation_functions
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to import generation_functions: {str(e)}")
+    return _generation_functions
 
 app = FastAPI(
     title="Chatterbox TTS API",
@@ -72,10 +117,19 @@ def root():
 def health():
     """Health check endpoint - works even without Supabase"""
     supabase_connected = bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+    
+    # Try to check torch availability, but don't fail if it's not loaded
+    device = "unknown"
+    try:
+        torch = get_torch()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except:
+        device = "not_loaded"
+    
     return {
         "ok": True,
         "supabase_connected": supabase_connected,
-        "device": "cuda" if torch.cuda.is_available() else "cpu"
+        "device": device
     }
     
 
@@ -193,6 +247,10 @@ async def generate_audio(
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
     try:
+        # Lazy load dependencies
+        np = get_numpy()
+        model_manager = get_model_manager()
+        
         # Download voice file if URL provided
         voice_path = None
         if voice_url:
@@ -256,6 +314,8 @@ async def generate_audio(
             }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
 
