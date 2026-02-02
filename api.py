@@ -34,17 +34,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Supabase configuration
+# Supabase configuration - lazy initialization to prevent boot crashes
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "voices")
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    print("⚠️ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars")
-    supabase = None
-else:
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
+def get_supabase():
+    """
+    Lazy Supabase client initialization
+    Only creates client when actually needed, preventing boot crashes
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(
+            status_code=500, 
+            detail="Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables."
+        )
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        
 
 @app.get("/")
 def root():
@@ -64,13 +70,14 @@ def root():
 
 @app.get("/health")
 def health():
-    """Health check endpoint"""
+    """Health check endpoint - works even without Supabase"""
+    supabase_connected = bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
     return {
         "ok": True,
-        "supabase_connected": supabase is not None,
+        "supabase_connected": supabase_connected,
         "device": "cuda" if torch.cuda.is_available() else "cpu"
     }
-
+    
 
 @app.post("/upload-voice")
 async def upload_voice(
@@ -95,8 +102,7 @@ async def upload_voice(
     - gender: Voice gender
     - language: Voice language
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
+    supabase = get_supabase()  # Lazy init
     
     if not file.content_type or not file.content_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="Only audio files allowed")
@@ -138,9 +144,8 @@ def list_voices():
     Returns:
     - List of voice objects with name, url, gender, language
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
-
+    supabase = get_supabase()  # Lazy init
+    
     try:
         res = supabase.storage.from_(SUPABASE_BUCKET).list()
 
@@ -266,8 +271,7 @@ def delete_voice(voice_id: str):
     Returns:
     - Success message
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase not configured")
+    supabase = get_supabase()  # Lazy init
     
     try:
         # List all files and find matching voice_id
