@@ -48,8 +48,9 @@ syn_out/
 checkpoints/
 .gradio
 
-# Ignore generated sample .wav files
+# Ignore generated sample .wav files (but keep default voice samples)
 **/*.wav
+!modules/voice_samples/*.wav
 
 # Batch output directory with large files
 batch_output/
