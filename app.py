@@ -29,7 +29,8 @@ from modules.generation_functions import (
     generate_multilingual_speech,
     convert_voice,
     generate_turbo_speech,
-    generate_batch_turbo_speech
+    generate_batch_turbo_speech,
+    generate_motivation_hub_speech
 )
 
 # Import UI components
@@ -40,7 +41,8 @@ from modules.ui_components import (
     create_voice_conversion_tab,
     create_clone_voice_tab,
     create_turbo_tab,
-    create_batch_tab
+    create_batch_tab,
+    create_motivation_hub_voices_tab
 )
 
 # Load voices at startup
@@ -94,6 +96,9 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     
     with gr.Tab("📦 Batch TTS"):
         batch_components = create_batch_tab()
+    
+    with gr.Tab("🔊 Production App Voices"):
+        production_voice_components = create_motivation_hub_voices_tab()
 
     with gr.Tab("🎤 TTS Main (English)"):
         tts_components = create_tts_tab()
@@ -110,6 +115,19 @@ with gr.Blocks(title="Chatterbox TTS Enhanced", theme=gr.themes.Soft(), css=CUST
     # ---------------------------
     # Event Handlers - TTS Tab
     # ---------------------------
+    production_voice_components['generate_btn'].click(
+        fn=generate_motivation_hub_speech,
+        inputs=[
+            production_voice_components['text'],
+            production_voice_components['voice']
+        ],
+        outputs=[
+            production_voice_components['progress_bar'],
+            production_voice_components['audio_output'],
+            production_voice_components['status_box']
+        ]
+    )
+    
     tts_components['generate_btn'].click(
         fn=generate_speech,
         inputs=[

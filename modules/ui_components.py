@@ -474,3 +474,48 @@ def create_turbo_tab():
         "btn_laugh": btn_laugh
     }
 
+
+
+
+def create_motivation_hub_voices_tab():
+    """Create a tab for voices exposed by Motivation Hub's production app."""
+    with gr.Row():
+        with gr.Column():
+            gr.Markdown(
+                "Generate speech with the six voices used by Motivation Hub. "
+                "Text is sent to its live TTS endpoint; provider usage may be billed "
+                "to the Motivation Hub account."
+            )
+            text = gr.Textbox(
+                label="Text to synthesize (up to 4,000 characters)",
+                lines=8,
+                max_lines=16,
+                max_length=4000,
+                placeholder="Enter the text you want spoken...",
+            )
+            voice = gr.Dropdown(
+                label="Production voice",
+                choices=["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+                value="alloy",
+                info="These are the voice IDs configured by Motivation Hub.",
+            )
+            generate_btn = gr.Button("Generate with production voice", variant="primary")
+        with gr.Column():
+            progress = gr.Slider(
+                label="Progress", minimum=0, maximum=100, value=0, interactive=False
+            )
+            status = gr.Textbox(
+                label="Status", value="Ready to generate...", lines=3, interactive=False
+            )
+            audio = gr.Audio(
+                label="Generated audio", autoplay=True, show_download_button=True
+            )
+
+    return {
+        "text": text,
+        "voice": voice,
+        "generate_btn": generate_btn,
+        "progress_bar": progress,
+        "status_box": status,
+        "audio_output": audio,
+    }

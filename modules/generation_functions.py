@@ -6,6 +6,12 @@ import numpy as np
 import torch
 import time
 import re
+import base64
+import json
+import os
+import tempfile
+import urllib.error
+import urllib.request
 from .config import DEVICE, LANGUAGE_CONFIG, SUPPORTED_LANGUAGES
 from .model_manager import model_manager
 from .voice_manager import resolve_voice_path
@@ -516,3 +522,70 @@ def generate_batch_turbo_speech(text_list, voice_list, use_same_voice):
         error_status = f"❌ Error in batch generation: {str(e)}"
         yield 0, [], error_status
                     
+
+
+# Motivation Hub's production TTS endpoint accepts the same six voice IDs used in its app.
+MOTIVATION_HUB_VOICES = ("alloy", "echo", "fable", "onyx", "nova", "shimmer")
+MOTIVATION_HUB_TTS_URL = "https://motivation-hub-iota.vercel.app/api/tts"
+MAX_REMOTE_TTS_RESPONSE_BYTES = 25 * 1024 * 1024
+
+
+def generate_motivation_hub_speech(text, voice_name):
+    """Generate audio through Motivation Hub's production TTS API."""
+    if not text or not text.strip():
+        yield 0, None, "❌ Enter text before generating audio."
+        return
+
+    text = text.strip()
+    if len(text) > 4000:
+        yield 0, None, "❌ Text must be 4,000 characters or fewer."
+        return
+
+    if voice_name not in MOTIVATION_HUB_VOICES:
+        yield 0, None, "❌ Select one of the available Motivation Hub voices."
+        return
+
+    endpoint = os.environ.get("MOTIVATION_HUB_TTS_URL", MOTIVATION_HUB_TTS_URL).strip()
+    if not endpoint.startswith("https://"):
+        yield 0, None, "❌ The production TTS endpoint must use HTTPS."
+        return
+
+    yield 10, None, f"Sending text to Motivation Hub production TTS ({voice_name})..."
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps({"text": text, "voice": voice_name}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            raw_response = response.read(MAX_REMOTE_TTS_RESPONSE_BYTES + 1)
+        if len(raw_response) > MAX_REMOTE_TTS_RESPONSE_BYTES:
+            yield 0, None, "❌ The TTS response exceeded the 25 MB limit."
+            return
+
+        payload = json.loads(raw_response.decode("utf-8"))
+        audio_data = payload.get("audio", {}).get("base64Data")
+        if not audio_data:
+            detail = payload.get("error") or payload.get("details") or "The API did not return audio."
+            yield 0, None, f"❌ Motivation Hub TTS error: {detail}"
+            return
+
+        audio_bytes = base64.b64decode(audio_data, validate=True)
+        mime_type = payload.get("audio", {}).get("mimeType", "audio/mpeg").lower()
+        extension = ".wav" if "wav" in mime_type else ".mp3"
+        with tempfile.NamedTemporaryFile(prefix="motivation_hub_tts_", suffix=extension, delete=False) as audio_file:
+            audio_file.write(audio_bytes)
+            audio_path = audio_file.name
+
+        yield 100, audio_path, f"✅ Generated with Motivation Hub's {voice_name} voice."
+    except urllib.error.HTTPError as exc:
+        detail = exc.read(1000).decode("utf-8", errors="replace")
+        yield 0, None, f"❌ Production TTS returned HTTP {exc.code}: {detail or exc.reason}"
+    except urllib.error.URLError as exc:
+        yield 0, None, f"❌ Could not reach the production TTS endpoint: {exc.reason}"
+    except (ValueError, KeyError, TypeError) as exc:
+        yield 0, None, f"❌ Invalid TTS response: {exc}"
+    except Exception as exc:
+        yield 0, None, f"❌ TTS request failed: {exc}"
