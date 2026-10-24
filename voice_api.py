@@ -28,6 +28,11 @@ class SpeakRequest(BaseModel):
 def health():
     return {"status": "ok", "service": "chatterbox-voice", "stt_engine": "faster-whisper (optional)", "tts_engine": "chatterbox"}
 
+@app.get("/v1/voices", dependencies=[Depends(authorize)])
+def voices():
+    from modules.voice_manager import load_voices
+    return {"voices": [{"id": name, "label": name.replace("_", " ").title()} for name in load_voices()]}
+
 @app.post("/v1/speech", dependencies=[Depends(authorize)])
 def speech(payload: SpeakRequest):
     """Returns WAV; loads model lazily. One inference at a time to bound GPU use."""
@@ -42,6 +47,8 @@ def speech(payload: SpeakRequest):
         model = model_manager.get_tts_model()
         if model is None:
             raise HTTPException(status_code=503, detail="Speech model unavailable")
+        from modules.voice_manager import load_voices
+        load_voices()
         voice_path = resolve_voice_path(payload.voice, "en") if payload.voice else None
         if payload.voice and not voice_path:
             raise HTTPException(status_code=404, detail="Requested voice unavailable")
